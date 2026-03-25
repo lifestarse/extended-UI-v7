@@ -132,8 +132,7 @@ function addEditSchematicTable(dialog, name) {
 }
 
 function setMarker() {
-    let minimapIndex = Version.isAtLeast("152.2") ? 4 : 3;
-    let overlayMarker = Vars.ui.hudGroup.getChildren().get(minimapIndex);
+    let overlayMarker = Vars.ui.hudGroup.find("minimap/position");
     overlayMarker.row();
     contentTable = overlayMarker.table(Styles.black3).top().right().get();
     contentTable.visibility = () => isBuilded;
