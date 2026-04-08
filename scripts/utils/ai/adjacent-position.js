@@ -7,6 +7,7 @@ exports.find = function(fromTile, toTile, targetBlock, ingoreBlocks) {
     let tile = null;
     let minDistance = Infinity;
     perimeterTiles.forEach((t) => {
+        if (t == null) return;
         const vectorX = toTile.x - t.x;
         const vectorY = toTile.y - t.y;
         const distance = Mathf.dst(vectorX, vectorY);
