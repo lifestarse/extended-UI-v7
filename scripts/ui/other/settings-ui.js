@@ -3,6 +3,7 @@ const collectConfig = require("extended-ui/interact/collect-config");
 const storageConfig = require("extended-ui/interact/storage-config");
 const storageFill = require("extended-ui/interact/storage-fill");
 const consumerConfig = require("extended-ui/interact/consumer-config");
+const turretAmmoConfig = require("extended-ui/interact/turret-ammo-config");
 const taskPriority = require("extended-ui/interact/task-priority");
 const storageEditDialog = require("extended-ui/ui/dialogs/storage-edit-dialog");
 const iconsUtil = require("extended-ui/utils/icons");
@@ -311,7 +312,7 @@ function buildTaskPriorityDialog() {
         if (!listTable) return;
         listTable.clearChildren();
 
-        listTable.add(Core.bundle.get("eui.task-priority.section-tasks")).left().colspan(4).pad(8);
+        listTable.add(Core.bundle.get("eui.task-priority.section-tasks")).left().colspan(5).pad(8);
         listTable.row();
         const tasks = taskPriority.TASKS.slice();
         tasks.sort((a, b) => taskPriority.get(b.id) - taskPriority.get(a.id));
@@ -319,7 +320,7 @@ function buildTaskPriorityDialog() {
             addTaskRow(listTable, tasks[i]);
         }
 
-        listTable.add(Core.bundle.get("eui.task-priority.section-consumers")).left().colspan(4).pad(8).padTop(20);
+        listTable.add(Core.bundle.get("eui.task-priority.section-consumers")).left().colspan(5).pad(8).padTop(20);
         listTable.row();
 
         const byCategory = {};
@@ -381,7 +382,7 @@ function buildTaskPriorityDialog() {
         parent.button(label, Styles.cleart, () => {
             consumerConfig.setCategoryExpanded(category, !consumerConfig.isCategoryExpanded(category));
             rebuild();
-        }).colspan(4).left().growX().pad(4);
+        }).colspan(5).left().growX().pad(4);
         parent.row();
     }
 
@@ -399,6 +400,71 @@ function buildTaskPriorityDialog() {
             if (!isNaN(v)) consumerConfig.setPriority(block, Math.max(0, Math.min(consumerConfig.MAX_PRIORITY, v)));
         });
         fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= consumerConfig.MAX_PRIORITY);
+        fieldCell.width(80).pad(4);
+
+        if (block instanceof ItemTurret && block.ammoTypes && !block.ammoTypes.isEmpty()) {
+            parent.button(Icon.pencil, Styles.cleari, () => {
+                buildTurretAmmoDialog(block).show();
+            }).size(36).pad(4).tooltip(Core.bundle.get("eui.turret-ammo.button-tooltip"));
+        } else {
+            parent.add().size(36).pad(4);
+        }
+
+        parent.row();
+    }
+
+    dialog.shown(() => rebuild());
+    return dialog;
+}
+
+function buildTurretAmmoDialog(turretBlock) {
+    const dialog = new BaseDialog(turretBlock.localizedName + " — " + Core.bundle.get("eui.turret-ammo.title"));
+    dialog.addCloseButton();
+
+    let listTable = null;
+    dialog.cont.add(Core.bundle.get("eui.turret-ammo.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
+    dialog.cont.row();
+    dialog.cont.pane(t => { listTable = t; t.top(); }).grow().maxHeight(540);
+
+    function rebuild() {
+        if (!listTable) return;
+        listTable.clearChildren();
+
+        const entries = [];
+        turretBlock.ammoTypes.each((item, bullet) => {
+            entries.push({ item: item, bullet: bullet });
+        });
+        entries.sort((a, b) => {
+            const pa = turretAmmoConfig.getPriority(turretBlock, a.item);
+            const pb = turretAmmoConfig.getPriority(turretBlock, b.item);
+            if (pa !== pb) return pb - pa;
+            const da = a.bullet.damage + a.bullet.splashDamage;
+            const db = b.bullet.damage + b.bullet.splashDamage;
+            return db - da;
+        });
+
+        for (let i = 0; i < entries.length; i++) {
+            addRow(listTable, entries[i]);
+        }
+    }
+
+    function addRow(parent, entry) {
+        parent.image(iconsUtil.getByName(entry.item.name)).size(32).pad(4);
+
+        parent.check("", turretAmmoConfig.isEnabled(turretBlock, entry.item), v => {
+            turretAmmoConfig.setEnabled(turretBlock, entry.item, v);
+        }).pad(4);
+
+        parent.add(entry.item.localizedName).left().width(160).pad(4);
+
+        const dmg = entry.bullet.damage + entry.bullet.splashDamage;
+        parent.label(() => Core.bundle.format("eui.turret-ammo.damage", Math.round(dmg))).pad(4);
+
+        const fieldCell = parent.field(turretAmmoConfig.getPriority(turretBlock, entry.item) + "", text => {
+            const v = parseInt(text);
+            if (!isNaN(v)) turretAmmoConfig.setPriority(turretBlock, entry.item, Math.max(0, Math.min(turretAmmoConfig.MAX_PRIORITY, v)));
+        });
+        fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= turretAmmoConfig.MAX_PRIORITY);
         fieldCell.width(80).pad(4);
 
         parent.row();

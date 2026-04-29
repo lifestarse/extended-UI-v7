@@ -2,6 +2,7 @@ const timer = require("extended-ui/interact/interact-timer");
 const coreLimits = require("extended-ui/interact/core-limits");
 const storageFill = require("extended-ui/interact/storage-fill");
 const consumerConfig = require("extended-ui/interact/consumer-config");
+const turretAmmoConfig = require("extended-ui/interact/turret-ammo-config");
 const playerBusy = require("extended-ui/interact/player-busy");
 
 Events.run(Trigger.update, () => {
@@ -82,12 +83,18 @@ Events.run(Trigger.update, () => {
 
 function getBestAmmo(turret, core) {
     let best = null;
-    let bestDamage = 0;
+    let bestScore = -Infinity;
     turret.ammoTypes.each((item, ammo) => {
-        let totalDamage = ammo.damage + ammo.splashDamage;
-        if (totalDamage > bestDamage && core.items.get(item) >= coreLimits.getLimit(item)) {
+        if (!turretAmmoConfig.isEnabled(turret, item)) return;
+        if (core.items.get(item) < coreLimits.getLimit(item)) return;
+        const damage = ammo.damage + ammo.splashDamage;
+        const priority = turretAmmoConfig.getPriority(turret, item);
+        // Priority dominates when set; damage breaks ties (and is the
+        // sole signal when nobody set priorities).
+        const score = priority * 100000 + damage;
+        if (score > bestScore) {
             best = item;
-            bestDamage = totalDamage;
+            bestScore = score;
         }
     });
     return best;
