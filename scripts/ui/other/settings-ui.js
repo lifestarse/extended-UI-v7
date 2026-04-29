@@ -64,6 +64,7 @@ Events.on(EventType.ClientLoadEvent, () => {
         contentTable.checkPref("eui-auto-fill-turrets", true);
         contentTable.sliderPref("eui-auto-fill-min-amount", consumerConfig.DEFAULT_MIN_AMOUNT, 1, 50, 1, i => i);
         contentTable.checkPref("eui-auto-pilot", false);
+        contentTable.sliderPref("eui-steering-cooldown-sec", 2, 0, 10, 1, i => i + " s");
         contentTable.sliderPref("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
         if (!Vars.mobile) {
             contentTable.checkPref("eui-DragBlock", false);

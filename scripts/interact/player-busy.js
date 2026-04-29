@@ -1,8 +1,13 @@
 const SELECT_COOLDOWN_TICKS = 30;
-const STEERING_COOLDOWN_TICKS = 120;
+const DEFAULT_STEERING_COOLDOWN_SEC = 2;
 
-let lastSelectTime = -SELECT_COOLDOWN_TICKS - 1;
-let lastSteeringTime = -STEERING_COOLDOWN_TICKS - 1;
+let lastSelectTime = -1e9;
+let lastSteeringTime = -1e9;
+
+function steeringCooldownTicks() {
+    const sec = Core.settings.getInt("eui-steering-cooldown-sec", DEFAULT_STEERING_COOLDOWN_SEC);
+    return (sec >= 0 ? sec : DEFAULT_STEERING_COOLDOWN_SEC) * 60;
+}
 
 Events.run(Trigger.update, () => {
     if (isSelectActive()) {
@@ -100,8 +105,8 @@ exports.isPlayerInteracting = function() {
 }
 
 // True while/just-after the player did anything that would steer the
-// unit. Pauses auto-pilot for 2 seconds after release so the player
-// gets a clear stretch of manual control.
+// unit. Pauses auto-pilot for the configured cooldown after release so
+// the player gets a clear stretch of manual control.
 exports.isPlayerSteering = function() {
-    return Time.time - lastSteeringTime < STEERING_COOLDOWN_TICKS;
+    return Time.time - lastSteeringTime < steeringCooldownTicks();
 }
