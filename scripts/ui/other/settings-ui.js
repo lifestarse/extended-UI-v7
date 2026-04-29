@@ -1,12 +1,17 @@
+const coreLimits = require("extended-ui/interact/core-limits");
+const iconsUtil = require("extended-ui/utils/icons");
+
 Events.on(EventType.ClientLoadEvent, () => {
     Vars.ui.settings.addCategory("@eui.name", t => {
         t.row();
         t.button(Core.bundle.get("eui.name"), Styles.defaultt, () => extendedUIDialogSettings.show()).width(240).height(50);
     })
-    
+
     const extendedUIDialogSettings = new BaseDialog(Core.bundle.get("eui.settings"));
     extendedUIDialogSettings.addCloseButton();
     extendedUIDialogSettings.buttons.defaults().size(240, 60);
+
+    const coreLimitsDialog = buildCoreLimitsDialog();
 
     extendedUIDialogSettings.cont.pane((() => {
 
@@ -47,5 +52,71 @@ Events.on(EventType.ClientLoadEvent, () => {
 
         return contentTable;
     })());
+
+    extendedUIDialogSettings.cont.row();
+    extendedUIDialogSettings.cont.button(
+        Core.bundle.get("eui.core-limits.open"),
+        Icon.box,
+        () => coreLimitsDialog.show()
+    ).width(360).height(50).pad(8);
+
     global.eui.settings = extendedUIDialogSettings;
+    global.eui.coreLimitsDialog = coreLimitsDialog;
 });
+
+function buildCoreLimitsDialog() {
+    const dialog = new BaseDialog(Core.bundle.get("eui.core-limits.title"));
+    dialog.addCloseButton();
+    dialog.buttons.button(Core.bundle.get("eui.core-limits.reset-all"), () => {
+        Vars.ui.showConfirm(
+            Core.bundle.get("eui.core-limits.reset-all"),
+            Core.bundle.get("eui.core-limits.reset-confirm"),
+            () => {
+                Vars.content.items().each(item => coreLimits.resetLimit(item));
+                rebuild();
+            }
+        );
+    }).size(240, 60);
+
+    let listTable = null;
+    dialog.cont.add(Core.bundle.get("eui.core-limits.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
+    dialog.cont.row();
+    dialog.cont.pane(t => { listTable = t; t.top(); }).grow().maxHeight(540);
+
+    function rebuild() {
+        if (!listTable) return;
+        listTable.clearChildren();
+        const items = [];
+        Vars.content.items().each(item => items.push(item));
+        items.sort((a, b) => a.id - b.id);
+        for (let i = 0; i < items.length; i++) {
+            addItemRow(listTable, items[i]);
+        }
+    }
+
+    function addItemRow(parent, item) {
+        parent.image(iconsUtil.getByName(item.name)).size(32).pad(4);
+        parent.add(item.localizedName).left().width(160).pad(4);
+
+        const fieldCell = parent.field(coreLimits.getLimit(item) + "", text => {
+            const v = parseInt(text);
+            if (!isNaN(v)) {
+                const clamped = Math.max(0, Math.min(coreLimits.LIMIT_MAX, v));
+                coreLimits.setLimit(item, clamped);
+            }
+        });
+        fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= coreLimits.LIMIT_MAX);
+        fieldCell.width(110).pad(4);
+        const fieldElement = fieldCell.get();
+
+        parent.button(Icon.cancel, Styles.cleari, () => {
+            coreLimits.resetLimit(item);
+            fieldElement.setText(coreLimits.DEFAULT_LIMIT + "");
+        }).size(36).pad(4).tooltip(Core.bundle.get("eui.core-limits.reset-tooltip"));
+
+        parent.row();
+    }
+
+    dialog.shown(() => rebuild());
+    return dialog;
+}

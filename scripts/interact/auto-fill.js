@@ -1,4 +1,5 @@
 const timer = require("extended-ui/interact/interact-timer");
+const coreLimits = require("extended-ui/interact/core-limits");
 
 Events.run(Trigger.update, () => {
     if (!Core.settings.getBool("eui-auto-fill", false) || !timer.canInteract()) return;
@@ -72,7 +73,7 @@ function getBestAmmo(turret, core) {
     let bestDamage = 0;
     turret.ammoTypes.each((item, ammo) => {
         let totalDamage = ammo.damage + ammo.splashDamage;
-        if (totalDamage > bestDamage && core.items.get(item) >= 20) {
+        if (totalDamage > bestDamage && core.items.get(item) >= coreLimits.getLimit(item)) {
             best = item;
             bestDamage = totalDamage;
         }
@@ -104,7 +105,7 @@ function getFilterRequest(filter, build, core) {
     let request = null;
     let stop = false;
     Vars.content.items().each(item => {
-        if (filter.filter.get(item) && item != Items.blastCompound && core.items.get(item) >= 20) {
+        if (filter.filter.get(item) && item != Items.blastCompound && core.items.get(item) >= coreLimits.getLimit(item)) {
             if (build.acceptStack(item, 20, Vars.player.unit()) >= 5 && request == null && !stop) {
                 request = item;
             } else {
@@ -118,7 +119,7 @@ function getFilterRequest(filter, build, core) {
 function findRequiredItem(stacks, build, core) {
     for (let itemStack of stacks) {
         let item = itemStack.item;
-        if (core.items.get(item) >= 20 && build.acceptStack(item, 20, Vars.player.unit()) >= 5) {
+        if (core.items.get(item) >= coreLimits.getLimit(item) && build.acceptStack(item, 20, Vars.player.unit()) >= 5) {
             return item;
         }
     }
