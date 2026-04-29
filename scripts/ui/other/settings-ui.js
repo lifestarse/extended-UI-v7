@@ -46,6 +46,7 @@ Events.on(EventType.ClientLoadEvent, () => {
         contentTable.sliderPref("eui-maxZoom", 10, 1, 10, 1, i => i);
         contentTable.checkPref("eui-makeMineble", false);
         contentTable.checkPref("eui-showInteractSettings", true);
+        contentTable.sliderPref("eui-core-limit-global", coreLimits.DEFAULT_LIMIT, 0, 1000, 10, i => i);
         contentTable.checkPref("eui-auto-collect-factory", false);
         contentTable.checkPref("eui-auto-collect-drill", false);
         contentTable.sliderPref("eui-collect-threshold", 50, 0, 100, 5, i => i + " %");
@@ -109,9 +110,13 @@ function buildCoreLimitsDialog() {
 
     function addItemRow(parent, item) {
         parent.image(iconsUtil.getByName(item.name)).size(32).pad(4);
-        parent.add(item.localizedName).left().width(160).pad(4);
+        parent.add(item.localizedName).left().width(140).pad(4);
 
-        const fieldCell = parent.field(coreLimits.getLimit(item) + "", text => {
+        parent.check("", coreLimits.isOverridden(item), b => {
+            coreLimits.setOverridden(item, b);
+        }).pad(4).tooltip(Core.bundle.get("eui.core-limits.override-tooltip"));
+
+        const fieldCell = parent.field(coreLimits.getStoredLimit(item) + "", text => {
             const v = parseInt(text);
             if (!isNaN(v)) {
                 const clamped = Math.max(0, Math.min(coreLimits.LIMIT_MAX, v));
