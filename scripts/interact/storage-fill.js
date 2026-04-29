@@ -62,6 +62,10 @@ Events.run(Trigger.update, () => {
     if (!core || !player.within(core, Vars.buildingRange)) return;
 
     const autopilotOn = Core.settings.getBool("eui-auto-pilot", false);
+    // When auto-pilot is steering, mirror its trip threshold: don't fetch
+    // a partial inventory just because some storage is short by a handful.
+    // Otherwise the drone burns trips topping off near-full storages.
+    const minDeficit = autopilotOn ? ((unit.type && unit.type.itemCapacity) || 0) : 0;
     let neededItem = null;
 
     const checkStorage = b => {
@@ -69,7 +73,7 @@ Events.run(Trigger.update, () => {
         try {
             if (!exports.isManagedStorage(b.block)) return;
             const item = storageConfig.findNeededItem(b, it =>
-                core.items.get(it) >= coreLimits.getLimit(it));
+                core.items.get(it) >= coreLimits.getLimit(it), minDeficit);
             if (item) neededItem = item;
         } catch (e) {}
     };
