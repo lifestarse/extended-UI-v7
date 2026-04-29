@@ -1,5 +1,7 @@
 const coreLimits = require("extended-ui/interact/core-limits");
 const collectConfig = require("extended-ui/interact/collect-config");
+const storageConfig = require("extended-ui/interact/storage-config");
+const storageFill = require("extended-ui/interact/storage-fill");
 const iconsUtil = require("extended-ui/utils/icons");
 
 Events.on(EventType.ClientLoadEvent, () => {
@@ -14,6 +16,7 @@ Events.on(EventType.ClientLoadEvent, () => {
 
     const coreLimitsDialog = buildCoreLimitsDialog();
     const collectTargetsDialog = buildCollectTargetsDialog();
+    const storageListDialog = buildStorageListDialog();
 
     extendedUIDialogSettings.cont.pane((() => {
 
@@ -50,6 +53,7 @@ Events.on(EventType.ClientLoadEvent, () => {
         contentTable.checkPref("eui-auto-collect-factory", false);
         contentTable.checkPref("eui-auto-collect-drill", false);
         contentTable.sliderPref("eui-collect-threshold", 50, 0, 100, 5, i => i + " %");
+        contentTable.checkPref("eui-storage-fill", false);
         contentTable.checkPref("eui-auto-pilot", false);
         contentTable.sliderPref("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
         if (!Vars.mobile) {
@@ -72,10 +76,17 @@ Events.on(EventType.ClientLoadEvent, () => {
         Icon.box,
         () => collectTargetsDialog.show()
     ).width(360).height(50).pad(8);
+    extendedUIDialogSettings.cont.row();
+    extendedUIDialogSettings.cont.button(
+        Core.bundle.get("eui.storage.open"),
+        Icon.box,
+        () => storageListDialog.show()
+    ).width(360).height(50).pad(8);
 
     global.eui.settings = extendedUIDialogSettings;
     global.eui.coreLimitsDialog = coreLimitsDialog;
     global.eui.collectTargetsDialog = collectTargetsDialog;
+    global.eui.storageListDialog = storageListDialog;
 });
 
 function buildCoreLimitsDialog() {
@@ -205,5 +216,119 @@ function buildCollectTargetsDialog() {
     }
 
     dialog.shown(() => rebuild());
+    return dialog;
+}
+
+function buildStorageListDialog() {
+    const dialog = new BaseDialog(Core.bundle.get("eui.storage.title"));
+    dialog.addCloseButton();
+
+    let listTable = null;
+    dialog.cont.add(Core.bundle.get("eui.storage.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
+    dialog.cont.row();
+    dialog.cont.pane(t => { listTable = t; t.top(); }).grow().maxHeight(540);
+
+    function rebuild() {
+        if (!listTable) return;
+        listTable.clearChildren();
+        const storages = [];
+        Groups.build.each(b => {
+            try {
+                if (b.team !== Vars.player.team()) return;
+                if (!storageFill.isManagedStorage(b.block)) return;
+                storages.push(b);
+            } catch (e) {}
+        });
+
+        if (storages.length === 0) {
+            listTable.add(Core.bundle.get("eui.storage.no-storages")).colspan(4).pad(8);
+            listTable.row();
+            return;
+        }
+
+        storages.sort((a, b) => (a.tile.y * 10000 + a.tile.x) - (b.tile.y * 10000 + b.tile.x));
+        for (let i = 0; i < storages.length; i++) {
+            addStorageRow(listTable, storages[i]);
+        }
+    }
+
+    function addStorageRow(parent, building) {
+        const block = building.block;
+        parent.image(iconsUtil.getByName(block.name)).size(32).pad(4);
+        parent.add(block.localizedName + " (" + building.tile.x + ", " + building.tile.y + ")").left().growX().pad(4);
+
+        const configured = storageConfig.countConfigured(building);
+        parent.label(() => configured > 0
+            ? Core.bundle.format("eui.storage.row-summary", configured)
+            : Core.bundle.get("eui.storage.row-empty")).pad(4);
+
+        parent.button(Icon.pencil, Styles.cleari, () => {
+            buildStorageEditDialog(building, () => rebuild()).show();
+        }).size(36).pad(4);
+
+        parent.row();
+    }
+
+    dialog.shown(() => rebuild());
+    return dialog;
+}
+
+function buildStorageEditDialog(building, onClose) {
+    const block = building.block;
+    const dialog = new BaseDialog(block.localizedName + " (" + building.tile.x + ", " + building.tile.y + ")");
+    dialog.addCloseButton();
+
+    dialog.buttons.button(Core.bundle.get("eui.storage.clear-all"), () => {
+        Vars.ui.showConfirm(
+            Core.bundle.get("eui.storage.clear-all"),
+            Core.bundle.get("eui.storage.clear-confirm"),
+            () => {
+                Vars.content.items().each(item => storageConfig.setThreshold(building, item, 0));
+                rebuild();
+            }
+        );
+    }).size(240, 60);
+
+    let listTable = null;
+    dialog.cont.add(Core.bundle.get("eui.storage.edit-hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
+    dialog.cont.row();
+    dialog.cont.pane(t => { listTable = t; t.top(); }).grow().maxHeight(540);
+
+    function rebuild() {
+        if (!listTable) return;
+        listTable.clearChildren();
+        const items = [];
+        Vars.content.items().each(item => items.push(item));
+        items.sort((a, b) => a.id - b.id);
+        for (let i = 0; i < items.length; i++) {
+            addItemRow(listTable, items[i]);
+        }
+    }
+
+    function addItemRow(parent, item) {
+        parent.image(iconsUtil.getByName(item.name)).size(32).pad(4);
+        parent.add(item.localizedName).left().width(140).pad(4);
+
+        const fieldCell = parent.field(storageConfig.getThreshold(building, item) + "", text => {
+            const v = parseInt(text);
+            if (!isNaN(v)) {
+                const clamped = Math.max(0, Math.min(storageConfig.MAX_THRESHOLD, v));
+                storageConfig.setThreshold(building, item, clamped);
+            }
+        });
+        fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= storageConfig.MAX_THRESHOLD);
+        fieldCell.width(110).pad(4);
+        const fieldElement = fieldCell.get();
+
+        parent.button(Icon.cancel, Styles.cleari, () => {
+            storageConfig.setThreshold(building, item, 0);
+            fieldElement.setText("0");
+        }).size(36).pad(4);
+
+        parent.row();
+    }
+
+    dialog.shown(() => rebuild());
+    if (onClose) dialog.hidden(() => onClose());
     return dialog;
 }

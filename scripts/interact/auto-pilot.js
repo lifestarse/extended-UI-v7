@@ -1,4 +1,7 @@
 const collectConfig = require("extended-ui/interact/collect-config");
+const storageConfig = require("extended-ui/interact/storage-config");
+const storageFill = require("extended-ui/interact/storage-fill");
+const coreLimits = require("extended-ui/interact/core-limits");
 
 const RESCAN_TICKS = 30;
 const ARRIVE_PADDING = Vars.tilesize * 2;
@@ -53,6 +56,7 @@ function hasPlayerMoveInput() {
 
 function isStale(target, unit) {
     if (!target.b || target.b.dead() || target.b.tile == null || target.b.tile.build !== target.b) return true;
+    if (target.kind === "core-fetch") return false;
     const stack = unit.stack;
     if (stack.amount > 0 && stack.item) {
         if (!target.expectsConsumer) return true;
@@ -65,15 +69,72 @@ function isStale(target, unit) {
 
 function pickTarget(unit, team) {
     const stack = unit.stack;
+    const storageOn = Core.settings.getBool("eui-storage-fill", false);
+    const fillOn = Core.settings.getBool("eui-auto-fill", false);
+
     if (stack.amount > 0 && stack.item) {
-        if (!Core.settings.getBool("eui-auto-fill", false)) return null;
-        return findBestConsumer(unit, stack.item, team);
+        if (fillOn) {
+            const c = findBestConsumer(unit, stack.item, team);
+            if (c) return c;
+        }
+        if (storageOn) {
+            const s = findBestStorageNeed(unit, stack.item, team);
+            if (s) return s;
+        }
+        return null;
+    }
+
+    if (storageOn) {
+        const fetch = findCoreFetchForStorage(unit, team);
+        if (fetch) return fetch;
     }
 
     const factoryOn = Core.settings.getBool("eui-auto-collect-factory", false);
     const drillOn = Core.settings.getBool("eui-auto-collect-drill", false);
     if (!factoryOn && !drillOn) return null;
     return findBestProducer(unit, team, factoryOn, drillOn);
+}
+
+function findBestStorageNeed(unit, item, team) {
+    let bestB = null;
+    let bestDeficit = 0;
+    Groups.build.each(b => {
+        try {
+            if (b.team !== team) return;
+            if (!storageFill.isManagedStorage(b.block)) return;
+            const threshold = storageConfig.getThreshold(b, item);
+            if (threshold <= 0) return;
+            if (!b.items) return;
+            const stock = b.items.get(item);
+            if (stock >= threshold) return;
+            if (b.acceptStack(item, 5, unit) < 5) return;
+            const deficit = threshold - stock;
+            if (deficit > bestDeficit) {
+                bestDeficit = deficit;
+                bestB = b;
+            }
+        } catch (e) {}
+    });
+    if (!bestB) return null;
+    return { x: bestB.x, y: bestB.y, b: bestB, item: item, expectsConsumer: true };
+}
+
+function findCoreFetchForStorage(unit, team) {
+    const core = Vars.player.closestCore();
+    if (!core) return null;
+    let chosen = null;
+    Groups.build.each(b => {
+        if (chosen) return;
+        try {
+            if (b.team !== team) return;
+            if (!storageFill.isManagedStorage(b.block)) return;
+            const item = storageConfig.findNeededItem(b, it =>
+                core.items.get(it) >= coreLimits.getLimit(it));
+            if (item) chosen = item;
+        } catch (e) {}
+    });
+    if (!chosen) return null;
+    return { x: core.x, y: core.y, b: core, item: chosen, expectsConsumer: false, kind: "core-fetch" };
 }
 
 function findBestConsumer(unit, item, team) {

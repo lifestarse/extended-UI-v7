@@ -14,6 +14,7 @@ const modules = [
 
     "interact/auto-fill",
     "interact/auto-collect",
+    "interact/storage-fill",
     "interact/auto-pilot",
     "interact/auto-unit",
     "interact/schematic-selector",
