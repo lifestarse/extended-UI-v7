@@ -11,7 +11,7 @@ Events.on(ClientLoadEvent, () => {
     Vars.ui.hudGroup.fill(null, t => {
         panel = t.table(Styles.black3).margin(6).get();
         panel.visibility = () => Core.settings.getBool("eui-task-overlay", false) && Vars.ui.hudfrag.shown;
-        t.bottom().left().padBottom(120);
+        t.bottom().left();
         t.pack();
     });
 });
