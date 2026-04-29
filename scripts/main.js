@@ -21,6 +21,7 @@ const modules = [
 
     "ui/other/settings-ui",
     "ui/blocks/storage-click-ui",
+    "ui/blocks/storage-hover-ui",
     "ui/other/schematics-table-ui",
     "ui/other/power-ui",
     "ui/other/resource-rate-ui",

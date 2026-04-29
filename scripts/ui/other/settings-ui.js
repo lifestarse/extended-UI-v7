@@ -56,6 +56,7 @@ Events.on(EventType.ClientLoadEvent, () => {
         contentTable.sliderPref("eui-collect-threshold", 50, 0, 100, 5, i => i + " %");
         contentTable.checkPref("eui-storage-fill", false);
         contentTable.checkPref("eui-storage-click-ui", true);
+        contentTable.checkPref("eui-storage-hover-ui", true);
         contentTable.checkPref("eui-auto-pilot", false);
         contentTable.sliderPref("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
         if (!Vars.mobile) {
