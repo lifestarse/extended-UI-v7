@@ -14,6 +14,7 @@ const modules = [
 
     "interact/player-busy",
     "interact/storage-fill",
+    "interact/storage-drain",
     "interact/auto-fill",
     "interact/auto-collect",
     "interact/auto-pilot",

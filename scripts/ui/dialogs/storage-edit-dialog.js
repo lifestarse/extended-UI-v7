@@ -11,7 +11,10 @@ exports.build = function(building, onClose) {
             Core.bundle.get("eui.storage.clear-all"),
             Core.bundle.get("eui.storage.clear-confirm"),
             () => {
-                Vars.content.items().each(item => storageConfig.setThreshold(building, item, 0));
+                Vars.content.items().each(item => {
+                    storageConfig.setThreshold(building, item, 0);
+                    storageConfig.setDrain(building, item, false);
+                });
                 rebuild();
             }
         );
@@ -57,6 +60,10 @@ exports.build = function(building, onClose) {
             storageConfig.setThreshold(building, item, 0);
             fieldElement.setText("0");
         }).size(36).pad(4);
+
+        parent.check("", storageConfig.getDrain(building, item), v => {
+            storageConfig.setDrain(building, item, v);
+        }).pad(4).tooltip(Core.bundle.get("eui.storage.drain-tooltip"));
 
         parent.row();
     }

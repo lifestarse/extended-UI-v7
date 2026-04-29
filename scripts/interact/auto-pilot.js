@@ -1,6 +1,7 @@
 const collectConfig = require("extended-ui/interact/collect-config");
 const storageConfig = require("extended-ui/interact/storage-config");
 const storageFill = require("extended-ui/interact/storage-fill");
+const storageDrain = require("extended-ui/interact/storage-drain");
 const coreLimits = require("extended-ui/interact/core-limits");
 const playerBusy = require("extended-ui/interact/player-busy");
 const taskPriority = require("extended-ui/interact/task-priority");
@@ -74,6 +75,15 @@ function pickTarget(unit, team) {
     const factoryOn = Core.settings.getBool("eui-auto-collect-factory", false);
     const drillOn = Core.settings.getBool("eui-auto-collect-drill", false);
 
+    // Drain trips override everything else: once items are picked up from
+    // a drain storage, the drone heads straight to core to unload them.
+    if (stack.amount > 0 && stack.item && storageDrain.isCarrying()) {
+        const core = Vars.player.closestCore();
+        if (core) {
+            return { x: core.x, y: core.y, b: core, item: stack.item, expectsConsumer: false, kind: "core-dump" };
+        }
+    }
+
     const candidates = [];
 
     if (stack.amount > 0 && stack.item) {
@@ -107,6 +117,8 @@ function pickTarget(unit, team) {
             const fetch = findCoreFetchForStorage(unit, team);
             if (fetch) candidates.push({ task: "storage-fetch", target: fetch });
         }
+        const drain = storageDrain.findDrainSource(team);
+        if (drain) candidates.push({ task: "storage-drain-fetch", target: drain });
         if (factoryOn || drillOn) {
             const p = findBestProducer(unit, team, factoryOn, drillOn, null);
             if (p) candidates.push({ task: "producer-collect", target: p });
