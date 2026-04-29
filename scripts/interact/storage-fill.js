@@ -37,16 +37,18 @@ Events.run(Trigger.update, () => {
     if (!core || !player.within(core, Vars.buildingRange)) return;
 
     let neededItem = null;
-    Groups.build.each(b => {
-        if (neededItem) return;
-        try {
-            if (b.team !== team) return;
-            if (!exports.isManagedStorage(b.block)) return;
-            const item = storageConfig.findNeededItem(b, it =>
-                core.items.get(it) >= coreLimits.getLimit(it));
-            if (item) neededItem = item;
-        } catch (e) {}
-    });
+    const data = team.data();
+    if (data && data.buildings) {
+        data.buildings.each(b => {
+            if (neededItem) return;
+            try {
+                if (!exports.isManagedStorage(b.block)) return;
+                const item = storageConfig.findNeededItem(b, it =>
+                    core.items.get(it) >= coreLimits.getLimit(it));
+                if (item) neededItem = item;
+            } catch (e) {}
+        });
+    }
 
     if (neededItem) {
         Call.requestItem(player, core, neededItem, 999);

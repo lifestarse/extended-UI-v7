@@ -235,13 +235,16 @@ function buildStorageListDialog() {
         if (!listTable) return;
         listTable.clearChildren();
         const storages = [];
-        Groups.build.each(b => {
-            try {
-                if (b.team !== Vars.player.team()) return;
-                if (!storageFill.isManagedStorage(b.block)) return;
-                storages.push(b);
-            } catch (e) {}
-        });
+        const team = Vars.player.team();
+        const data = team ? team.data() : null;
+        const builds = data ? data.buildings : null;
+        if (builds) {
+            builds.each(b => {
+                try {
+                    if (storageFill.isManagedStorage(b.block)) storages.push(b);
+                } catch (e) {}
+            });
+        }
 
         if (storages.length === 0) {
             listTable.add(Core.bundle.get("eui.storage.no-storages")).colspan(4).pad(8);

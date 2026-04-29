@@ -73,11 +73,12 @@ Events.run(Trigger.update, () => {
 
 function isItemReservedForStorage(item, team) {
     if (!Core.settings.getBool("eui-storage-fill", false)) return false;
+    const data = team.data();
+    if (!data || !data.buildings) return false;
     let reserved = false;
-    Groups.build.each(b => {
+    data.buildings.each(b => {
         if (reserved) return;
         try {
-            if (b.team !== team) return;
             if (!storageFill.isManagedStorage(b.block)) return;
             const threshold = storageConfig.getThreshold(b, item);
             if (threshold > 0 && b.items && b.items.get(item) < threshold) reserved = true;

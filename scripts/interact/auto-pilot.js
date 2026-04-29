@@ -95,12 +95,20 @@ function pickTarget(unit, team) {
     return findBestProducer(unit, team, factoryOn, drillOn);
 }
 
+function teamBuildings(team) {
+    if (!team) return null;
+    const data = team.data();
+    if (!data || !data.buildings) return null;
+    return data.buildings;
+}
+
 function findBestStorageNeed(unit, item, team) {
+    const builds = teamBuildings(team);
+    if (!builds) return null;
     let bestB = null;
     let bestDeficit = 0;
-    Groups.build.each(b => {
+    builds.each(b => {
         try {
-            if (b.team !== team) return;
             if (!storageFill.isManagedStorage(b.block)) return;
             const threshold = storageConfig.getThreshold(b, item);
             if (threshold <= 0) return;
@@ -122,11 +130,12 @@ function findBestStorageNeed(unit, item, team) {
 function findCoreFetchForStorage(unit, team) {
     const core = Vars.player.closestCore();
     if (!core) return null;
+    const builds = teamBuildings(team);
+    if (!builds) return null;
     let chosen = null;
-    Groups.build.each(b => {
+    builds.each(b => {
         if (chosen) return;
         try {
-            if (b.team !== team) return;
             if (!storageFill.isManagedStorage(b.block)) return;
             const item = storageConfig.findNeededItem(b, it =>
                 core.items.get(it) >= coreLimits.getLimit(it));
@@ -138,12 +147,13 @@ function findCoreFetchForStorage(unit, team) {
 }
 
 function findBestConsumer(unit, item, team) {
+    const builds = teamBuildings(team);
+    if (!builds) return null;
     let bestB = null;
     let bestStock = Infinity;
 
-    Groups.build.each(b => {
+    builds.each(b => {
         try {
-            if (b.team !== team) return;
             const block = b.block;
             if (!block || !block.consumers) return;
             const wantsItem = block.consumers.find(c =>
@@ -164,13 +174,14 @@ function findBestConsumer(unit, item, team) {
 }
 
 function findBestProducer(unit, team, factoryOn, drillOn) {
+    const builds = teamBuildings(team);
+    if (!builds) return null;
     let bestB = null;
     let bestItem = null;
     let bestScore = -1;
 
-    Groups.build.each(b => {
+    builds.each(b => {
         try {
-            if (b.team !== team) return;
             const block = b.block;
             if (!block) return;
 
