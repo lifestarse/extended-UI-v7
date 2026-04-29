@@ -5,50 +5,60 @@ let lastSelectTime = -SELECT_COOLDOWN_TICKS - 1;
 let lastSteeringTime = -STEERING_COOLDOWN_TICKS - 1;
 
 Events.run(Trigger.update, () => {
-    let select = false;
-    let steering = false;
-
-    try {
-        if (Core.input.keyDown(Binding.select)) {
-            select = true;
-            steering = true;
-        }
-    } catch (e) {}
-
-    if (!steering) {
-        try {
-            if (Core.input.keyDown(Binding.mine)) steering = true;
-        } catch (e) {}
+    if (isSelectActive()) {
+        lastSelectTime = Time.time;
+        lastSteeringTime = Time.time;
+        return;
     }
-    if (!steering) {
-        try {
-            if (Math.abs(Core.input.axis(Binding.move_x)) > 0.1) steering = true;
-            else if (Math.abs(Core.input.axis(Binding.move_y)) > 0.1) steering = true;
-        } catch (e) {}
+    if (isSteeringActive()) {
+        lastSteeringTime = Time.time;
     }
-    if (!steering) {
-        try {
-            const unit = Vars.player ? Vars.player.unit() : null;
-            if (unit && unit.mining && unit.mining()) steering = true;
-        } catch (e) {}
-    }
-
-    if (select) lastSelectTime = Time.time;
-    if (steering) lastSteeringTime = Time.time;
 });
 
-// True while/just-after Binding.select is held -- used by inventory script
-// actions (auto-fill, auto-collect, storage-fill) to avoid racing with the
-// player's manual transferInventory clicks. Short cooldown (~0.5s).
+function isSelectActive() {
+    try {
+        if (Core.input.keyDown(Binding.select)) return true;
+    } catch (e) {}
+    return false;
+}
+
+function isSteeringActive() {
+    // Default WASD / arrow keys via physical scancodes (works regardless
+    // of keyboard layout, doesn't need Binding to be reachable from Rhino).
+    try {
+        if (Core.input.keyDown(KeyCode.w)) return true;
+        if (Core.input.keyDown(KeyCode.a)) return true;
+        if (Core.input.keyDown(KeyCode.s)) return true;
+        if (Core.input.keyDown(KeyCode.d)) return true;
+        if (Core.input.keyDown(KeyCode.up)) return true;
+        if (Core.input.keyDown(KeyCode.down)) return true;
+        if (Core.input.keyDown(KeyCode.left)) return true;
+        if (Core.input.keyDown(KeyCode.right)) return true;
+    } catch (e) {}
+    // Binding-based axes for users who remapped movement to other keys.
+    try {
+        if (Math.abs(Core.input.axis(Binding.move_x)) > 0.1) return true;
+        if (Math.abs(Core.input.axis(Binding.move_y)) > 0.1) return true;
+    } catch (e) {}
+    // Mine / boost keys via Binding (so remaps are honoured).
+    try {
+        if (Core.input.keyDown(Binding.mine)) return true;
+    } catch (e) {}
+    try {
+        if (Core.input.keyDown(Binding.boost)) return true;
+    } catch (e) {}
+    // Unit is actively mining a tile.
+    try {
+        const unit = Vars.player ? Vars.player.unit() : null;
+        if (unit && unit.mining && unit.mining()) return true;
+    } catch (e) {}
+    return false;
+}
+
 exports.isPlayerInteracting = function() {
     return Time.time - lastSelectTime < SELECT_COOLDOWN_TICKS;
 }
 
-// True if the player did any kind of unit-steering input recently (select,
-// mine, WASD, or unit.mining()). Used by auto-pilot. Longer cooldown
-// (~1.5s) so the player gets a clear stretch of manual control after
-// touching the keys -- otherwise autopilot's moveAt jumps back in on the
-// next tick and feels like a tug-of-war.
 exports.isPlayerSteering = function() {
     return Time.time - lastSteeringTime < STEERING_COOLDOWN_TICKS;
 }
