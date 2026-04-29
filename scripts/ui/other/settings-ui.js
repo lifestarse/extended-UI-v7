@@ -3,6 +3,7 @@ const collectConfig = require("extended-ui/interact/collect-config");
 const storageConfig = require("extended-ui/interact/storage-config");
 const storageFill = require("extended-ui/interact/storage-fill");
 const turretConfig = require("extended-ui/interact/turret-config");
+const taskPriority = require("extended-ui/interact/task-priority");
 const storageEditDialog = require("extended-ui/ui/dialogs/storage-edit-dialog");
 const iconsUtil = require("extended-ui/utils/icons");
 
@@ -20,6 +21,7 @@ Events.on(EventType.ClientLoadEvent, () => {
     const collectTargetsDialog = buildCollectTargetsDialog();
     const storageListDialog = buildStorageListDialog();
     const turretPriorityDialog = buildTurretPriorityDialog();
+    const taskPriorityDialog = buildTaskPriorityDialog();
 
     extendedUIDialogSettings.cont.pane((() => {
 
@@ -61,6 +63,7 @@ Events.on(EventType.ClientLoadEvent, () => {
         contentTable.checkPref("eui-storage-hover-ui", true);
         contentTable.checkPref("eui-auto-fill-turrets", true);
         contentTable.checkPref("eui-auto-pilot", false);
+        contentTable.checkPref("eui-task-overlay", false);
         contentTable.sliderPref("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
         if (!Vars.mobile) {
             contentTable.checkPref("eui-DragBlock", false);
@@ -94,12 +97,19 @@ Events.on(EventType.ClientLoadEvent, () => {
         Icon.box,
         () => turretPriorityDialog.show()
     ).width(360).height(50).pad(8);
+    extendedUIDialogSettings.cont.row();
+    extendedUIDialogSettings.cont.button(
+        Core.bundle.get("eui.task-priority.open"),
+        Icon.box,
+        () => taskPriorityDialog.show()
+    ).width(360).height(50).pad(8);
 
     global.eui.settings = extendedUIDialogSettings;
     global.eui.coreLimitsDialog = coreLimitsDialog;
     global.eui.collectTargetsDialog = collectTargetsDialog;
     global.eui.storageListDialog = storageListDialog;
     global.eui.turretPriorityDialog = turretPriorityDialog;
+    global.eui.taskPriorityDialog = taskPriorityDialog;
 });
 
 function buildCoreLimitsDialog() {
@@ -356,6 +366,58 @@ function buildTurretPriorityDialog() {
         parent.button(Icon.cancel, Styles.cleari, () => {
             turretConfig.setPriority(block, 0);
             fieldElement.setText("0");
+        }).size(36).pad(4);
+
+        parent.row();
+    }
+
+    dialog.shown(() => rebuild());
+    return dialog;
+}
+
+function buildTaskPriorityDialog() {
+    const dialog = new BaseDialog(Core.bundle.get("eui.task-priority.title"));
+    dialog.addCloseButton();
+
+    let listTable = null;
+
+    dialog.buttons.button(Core.bundle.get("eui.task-priority.reset-all"), () => {
+        for (let i = 0; i < taskPriority.TASKS.length; i++) {
+            taskPriority.reset(taskPriority.TASKS[i].id);
+        }
+        rebuild();
+    }).size(240, 60);
+
+    dialog.cont.add(Core.bundle.get("eui.task-priority.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
+    dialog.cont.row();
+    dialog.cont.pane(t => { listTable = t; t.top(); }).grow().maxHeight(540);
+
+    function rebuild() {
+        if (!listTable) return;
+        listTable.clearChildren();
+        const tasks = taskPriority.TASKS.slice();
+        tasks.sort((a, b) => taskPriority.get(b.id) - taskPriority.get(a.id));
+        for (let i = 0; i < tasks.length; i++) {
+            addRow(listTable, tasks[i]);
+        }
+    }
+
+    function addRow(parent, task) {
+        parent.add(Core.bundle.get(task.bundleKey)).left().width(280).pad(4);
+
+        const fieldCell = parent.field(taskPriority.get(task.id) + "", text => {
+            const v = parseInt(text);
+            if (!isNaN(v)) {
+                taskPriority.set(task.id, Math.max(0, Math.min(999, v)));
+            }
+        });
+        fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= 999);
+        fieldCell.width(110).pad(4);
+        const fieldElement = fieldCell.get();
+
+        parent.button(Icon.cancel, Styles.cleari, () => {
+            taskPriority.reset(task.id);
+            fieldElement.setText(task.defaultPriority + "");
         }).size(36).pad(4);
 
         parent.row();

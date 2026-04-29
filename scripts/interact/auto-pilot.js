@@ -3,6 +3,7 @@ const storageConfig = require("extended-ui/interact/storage-config");
 const storageFill = require("extended-ui/interact/storage-fill");
 const coreLimits = require("extended-ui/interact/core-limits");
 const playerBusy = require("extended-ui/interact/player-busy");
+const taskPriority = require("extended-ui/interact/task-priority");
 
 const RESCAN_TICKS = 30;
 const ARRIVE_PADDING = Vars.tilesize * 2;
@@ -62,34 +63,39 @@ function pickTarget(unit, team) {
     const stack = unit.stack;
     const storageOn = Core.settings.getBool("eui-storage-fill", false);
     const fillOn = Core.settings.getBool("eui-auto-fill", false);
+    const factoryOn = Core.settings.getBool("eui-auto-collect-factory", false);
+    const drillOn = Core.settings.getBool("eui-auto-collect-drill", false);
+
+    const candidates = [];
 
     if (stack.amount > 0 && stack.item) {
         if (fillOn) {
             const c = findBestConsumer(unit, stack.item, team);
-            if (c) return c;
+            if (c) candidates.push({ task: "consumer-deliver", target: c });
         }
         if (storageOn) {
             const s = findBestStorageNeed(unit, stack.item, team);
-            if (s) return s;
+            if (s) candidates.push({ task: "storage-deliver", target: s });
         }
-        // Nothing wants this item -- route to core to dump it so the
-        // drone doesn't get stuck holding useless cargo.
         const dumpCore = Vars.player.closestCore();
         if (dumpCore) {
-            return { x: dumpCore.x, y: dumpCore.y, b: dumpCore, item: stack.item, expectsConsumer: false, kind: "core-dump" };
+            candidates.push({
+                task: "core-dump",
+                target: { x: dumpCore.x, y: dumpCore.y, b: dumpCore, item: stack.item, expectsConsumer: false, kind: "core-dump" }
+            });
         }
-        return null;
+    } else {
+        if (storageOn) {
+            const fetch = findCoreFetchForStorage(unit, team);
+            if (fetch) candidates.push({ task: "storage-fetch", target: fetch });
+        }
+        if (factoryOn || drillOn) {
+            const p = findBestProducer(unit, team, factoryOn, drillOn);
+            if (p) candidates.push({ task: "producer-collect", target: p });
+        }
     }
 
-    if (storageOn) {
-        const fetch = findCoreFetchForStorage(unit, team);
-        if (fetch) return fetch;
-    }
-
-    const factoryOn = Core.settings.getBool("eui-auto-collect-factory", false);
-    const drillOn = Core.settings.getBool("eui-auto-collect-drill", false);
-    if (!factoryOn && !drillOn) return null;
-    return findBestProducer(unit, team, factoryOn, drillOn);
+    return taskPriority.pickHighest(candidates);
 }
 
 function teamBuildings(team) {
