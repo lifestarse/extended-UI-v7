@@ -48,6 +48,7 @@ Events.on(EventType.ClientLoadEvent, () => {
         contentTable.checkPref("eui-showInteractSettings", true);
         contentTable.checkPref("eui-auto-collect-factory", false);
         contentTable.checkPref("eui-auto-collect-drill", false);
+        contentTable.sliderPref("eui-collect-threshold", 50, 0, 100, 5, i => i + " %");
         contentTable.checkPref("eui-auto-pilot", false);
         contentTable.sliderPref("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
         if (!Vars.mobile) {

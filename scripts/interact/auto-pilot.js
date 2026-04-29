@@ -117,10 +117,11 @@ function findBestProducer(unit, team, factoryOn, drillOn) {
                 && block.outputItems != null
                 && collectConfig.isFactoryEnabled(block)) {
                 if (!b.items) return;
+                const thr = collectConfig.getPickupThreshold(block);
                 for (let i = 0; i < block.outputItems.length; i++) {
                     const it = block.outputItems[i].item;
                     const stock = b.items.get(it);
-                    if (stock > 0 && stock > bestScore) {
+                    if (stock >= thr && stock > bestScore) {
                         bestScore = stock;
                         bestB = b;
                         bestItem = it;
@@ -134,7 +135,8 @@ function findBestProducer(unit, team, factoryOn, drillOn) {
                 if (dom == null) return;
                 if (!collectConfig.isDrillItemEnabled(dom)) return;
                 const stock = b.items.get(dom);
-                if (stock > 0 && stock > bestScore) {
+                const thr = collectConfig.getPickupThreshold(block);
+                if (stock >= thr && stock > bestScore) {
                     bestScore = stock;
                     bestB = b;
                     bestItem = dom;

@@ -19,3 +19,10 @@ exports.isDrillItemEnabled = function(item) {
 exports.setDrillItemEnabled = function(item, value) {
     Core.settings.put(DRILL_KEY_PREFIX + item.name, !!value);
 }
+
+exports.getPickupThreshold = function(block) {
+    const cap = block && block.itemCapacity ? block.itemCapacity : 1;
+    const percent = Core.settings.getInt("eui-collect-threshold", 50);
+    const t = Math.floor(cap * percent / 100);
+    return t < 1 ? 1 : t;
+}

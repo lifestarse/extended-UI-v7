@@ -33,9 +33,10 @@ Events.run(Trigger.update, () => {
         if (factoryEnabled && block instanceof GenericCrafter && collectConfig.isFactoryEnabled(block)) {
             const out = block.outputItems;
             if (out && b.items) {
+                const thr = collectConfig.getPickupThreshold(block);
                 for (let i = 0; i < out.length; i++) {
                     const it = out[i].item;
-                    if (b.items.get(it) > 0) {
+                    if (b.items.get(it) >= thr) {
                         target = b;
                         targetItem = it;
                         return;
@@ -46,7 +47,8 @@ Events.run(Trigger.update, () => {
 
         if (!target && drillEnabled && block instanceof Drill) {
             const dom = b.dominantItem;
-            if (dom != null && b.items && b.items.get(dom) > 0 && collectConfig.isDrillItemEnabled(dom)) {
+            if (dom != null && b.items && collectConfig.isDrillItemEnabled(dom)
+                && b.items.get(dom) >= collectConfig.getPickupThreshold(block)) {
                 target = b;
                 targetItem = dom;
             }
