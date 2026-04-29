@@ -1,34 +1,37 @@
-// True only while the player has Binding.select held right now.
-// Used by inventory script actions (auto-fill, auto-collect, storage-fill)
-// so a manual transferInventory click doesn't race with a scripted Call
-// on the same tick. No cooldown -- once the button is released the
-// scripts can act on the very next tick.
-exports.isPlayerInteracting = function() {
+const SELECT_COOLDOWN_TICKS = 30;
+const STEERING_COOLDOWN_TICKS = 120;
+
+let lastSelectTime = -SELECT_COOLDOWN_TICKS - 1;
+let lastSteeringTime = -STEERING_COOLDOWN_TICKS - 1;
+
+Events.run(Trigger.update, () => {
+    if (isSelectActive()) {
+        lastSelectTime = Time.time;
+        lastSteeringTime = Time.time;
+        return;
+    }
+    if (isSteeringActive()) {
+        lastSteeringTime = Time.time;
+    }
+});
+
+function isSelectActive() {
     try {
         if (Core.input.keyDown(Binding.select)) return true;
     } catch (e) {}
     return false;
 }
 
-// True only while the player is actively steering the unit right now.
-// No cooldown -- the only requirement is "don't move the unit on the
-// same tick as the player".
-exports.isPlayerSteering = function() {
-    if (exports.isPlayerInteracting()) return true;
-
-    // [primary] InputHandler's computed movement intent vector. This is
-    // populated by DesktopInput (from Binding.move_x/y axes, regardless
-    // of remapping), by mouse-follow mode (vector toward cursor), and by
-    // gamepad sticks. If non-zero, the player is steering somehow that
-    // would normally drive moveAt on this same tick.
+function isSteeringActive() {
+    // [primary] InputHandler's computed movement intent vector. Populated
+    // by DesktopInput from Binding.move_x/y axes (regardless of remapping),
+    // by mouse-follow mode, and by gamepad sticks.
     try {
         const ih = Vars.control ? Vars.control.input : null;
         if (ih && ih.movement && (Math.abs(ih.movement.x) > 0.1 || Math.abs(ih.movement.y) > 0.1)) return true;
     } catch (e) {}
 
-    // [mobile] On phones / tablets there are no key axes. MobileInput
-    // moves the player by setting a destination on tap; check the unit's
-    // moving flag if available, plus a few likely fields.
+    // [mobile] On phones / tablets: tap-to-move via MobileInput.
     try {
         if (Vars.mobile) {
             const unit = Vars.player.unit();
@@ -43,8 +46,6 @@ exports.isPlayerSteering = function() {
     } catch (e) {}
 
     // [desktop fallback] Default WASD / arrow keys via physical scancodes.
-    // Works on any keyboard layout for the default mapping without
-    // depending on the Binding API round-tripping through Rhino.
     try {
         if (Core.input.keyDown(KeyCode.w)) return true;
         if (Core.input.keyDown(KeyCode.a)) return true;
@@ -56,16 +57,14 @@ exports.isPlayerSteering = function() {
         if (Core.input.keyDown(KeyCode.right)) return true;
     } catch (e) {}
 
-    // [remap fallback] Binding axes if they happen to round-trip --
-    // covers users who remapped to keys outside the WASD/arrows set.
+    // [remap fallback] Binding axes for users who remapped to other keys.
     try {
         if (Math.abs(Core.input.axis(Binding.move_x)) > 0.1) return true;
         if (Math.abs(Core.input.axis(Binding.move_y)) > 0.1) return true;
     } catch (e) {}
 
-    // [mouse-follow fallback] Even if the InputHandler.movement read
-    // didn't land, "follow cursor" mode is detectable by checking the
-    // setting and the cursor distance from the unit.
+    // [mouse-follow fallback] Cursor distance from unit when "mousemove"
+    // mode is on.
     try {
         if (Core.settings.getBool("mousemove", false) || Core.settings.getBool("mouseMove", false)) {
             const unit = Vars.player.unit();
@@ -73,14 +72,12 @@ exports.isPlayerSteering = function() {
                 const m = Core.input.mouseWorld();
                 const dx = m.x - unit.x;
                 const dy = m.y - unit.y;
-                // ~3 tiles -- if cursor is right on top of unit there's
-                // no real steering intent, otherwise count it.
                 if (dx * dx + dy * dy > Vars.tilesize * Vars.tilesize * 9) return true;
             }
         }
     } catch (e) {}
 
-    // [bindings] Mine / boost so remaps are honoured.
+    // [bindings] Mine / boost via remapped Binding.
     try {
         if (Core.input.keyDown(Binding.mine)) return true;
     } catch (e) {}
@@ -94,4 +91,17 @@ exports.isPlayerSteering = function() {
         if (unit && unit.mining && unit.mining()) return true;
     } catch (e) {}
     return false;
+}
+
+// True while/just-after Binding.select is held -- pauses inventory
+// script actions for ~0.5s after release.
+exports.isPlayerInteracting = function() {
+    return Time.time - lastSelectTime < SELECT_COOLDOWN_TICKS;
+}
+
+// True while/just-after the player did anything that would steer the
+// unit. Pauses auto-pilot for 2 seconds after release so the player
+// gets a clear stretch of manual control.
+exports.isPlayerSteering = function() {
+    return Time.time - lastSteeringTime < STEERING_COOLDOWN_TICKS;
 }
