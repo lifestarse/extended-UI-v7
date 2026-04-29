@@ -50,6 +50,13 @@ function isStale(target, unit) {
     if (!target.b || target.b.dead || target.b.tile == null || target.b.tile.build !== target.b) return true;
     if (target.kind === "core-fetch" || target.kind === "core-dump") return false;
     const stack = unit.stack;
+    if (target.kind === "producer-topup") {
+        if (stack.amount === 0 || stack.item !== target.item) return true;
+        if (!target.b.items || target.b.items.get(target.item) <= 0) return true;
+        const cap = unit.type ? unit.type.itemCapacity : 0;
+        if (cap > 0 && stack.amount >= cap) return true;
+        return false;
+    }
     if (stack.amount > 0 && stack.item) {
         if (!target.expectsConsumer) return true;
         if (target.item !== stack.item) return true;
@@ -69,6 +76,16 @@ function pickTarget(unit, team) {
     const candidates = [];
 
     if (stack.amount > 0 && stack.item) {
+        const capacity = unit.type ? unit.type.itemCapacity : 0;
+        const isFull = capacity > 0 && stack.amount >= capacity;
+
+        if (!isFull && (factoryOn || drillOn)) {
+            const p = findBestProducer(unit, team, factoryOn, drillOn, stack.item);
+            if (p) {
+                p.kind = "producer-topup";
+                candidates.push({ task: "producer-topup", target: p });
+            }
+        }
         if (fillOn) {
             const c = findBestConsumer(unit, stack.item, team);
             if (c) candidates.push({ task: "consumer-deliver", target: c });
@@ -90,7 +107,7 @@ function pickTarget(unit, team) {
             if (fetch) candidates.push({ task: "storage-fetch", target: fetch });
         }
         if (factoryOn || drillOn) {
-            const p = findBestProducer(unit, team, factoryOn, drillOn);
+            const p = findBestProducer(unit, team, factoryOn, drillOn, null);
             if (p) candidates.push({ task: "producer-collect", target: p });
         }
     }
@@ -176,7 +193,7 @@ function findBestConsumer(unit, item, team) {
     return { x: bestB.x, y: bestB.y, b: bestB, item: item, expectsConsumer: true };
 }
 
-function findBestProducer(unit, team, factoryOn, drillOn) {
+function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
     const builds = teamBuildings(team);
     if (!builds) return null;
     let bestB = null;
@@ -195,6 +212,7 @@ function findBestProducer(unit, team, factoryOn, drillOn) {
                 const thr = collectConfig.getPickupThreshold(block);
                 for (let i = 0; i < block.outputItems.length; i++) {
                     const it = block.outputItems[i].item;
+                    if (requireItem && it !== requireItem) continue;
                     const stock = b.items.get(it);
                     if (stock >= thr && stock > bestScore) {
                         bestScore = stock;
@@ -208,6 +226,7 @@ function findBestProducer(unit, team, factoryOn, drillOn) {
             if (drillOn && block instanceof Drill && b.items) {
                 const dom = b.dominantItem;
                 if (dom == null) return;
+                if (requireItem && dom !== requireItem) return;
                 if (!collectConfig.isDrillItemEnabled(dom)) return;
                 const stock = b.items.get(dom);
                 const thr = collectConfig.getPickupThreshold(block);

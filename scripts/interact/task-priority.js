@@ -5,6 +5,7 @@ const PREFIX = "eui-task-priority-";
 // current drone state. Defaults are the legacy hard-coded ordering: feed
 // consumers first, then storages, then collect, then last-resort dumps.
 const TASKS = [
+    { id: "producer-topup",    defaultPriority: 110, bundleKey: "eui.task.producer-topup" },
     { id: "consumer-deliver",  defaultPriority: 100, bundleKey: "eui.task.consumer-deliver" },
     { id: "storage-deliver",   defaultPriority: 80,  bundleKey: "eui.task.storage-deliver" },
     { id: "storage-fetch",     defaultPriority: 70,  bundleKey: "eui.task.storage-fetch" },
