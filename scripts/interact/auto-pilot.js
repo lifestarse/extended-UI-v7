@@ -55,7 +55,7 @@ function hasPlayerMoveInput() {
 }
 
 function isStale(target, unit) {
-    if (!target.b || target.b.dead() || target.b.tile == null || target.b.tile.build !== target.b) return true;
+    if (!target.b || target.b.dead || target.b.tile == null || target.b.tile.build !== target.b) return true;
     if (target.kind === "core-fetch") return false;
     const stack = unit.stack;
     if (stack.amount > 0 && stack.item) {
