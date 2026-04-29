@@ -2,9 +2,11 @@ const timer = require("extended-ui/interact/interact-timer");
 const coreLimits = require("extended-ui/interact/core-limits");
 const storageFill = require("extended-ui/interact/storage-fill");
 const turretConfig = require("extended-ui/interact/turret-config");
+const playerBusy = require("extended-ui/interact/player-busy");
 
 Events.run(Trigger.update, () => {
     if (!Core.settings.getBool("eui-auto-fill", false) || !timer.canInteract()) return;
+    if (playerBusy.isPlayerInteracting()) return;
     const player = Vars.player;
     if (player.unit() == null) return;
     const stack = player.unit().stack;

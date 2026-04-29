@@ -2,6 +2,7 @@ const collectConfig = require("extended-ui/interact/collect-config");
 const storageConfig = require("extended-ui/interact/storage-config");
 const storageFill = require("extended-ui/interact/storage-fill");
 const coreLimits = require("extended-ui/interact/core-limits");
+const playerBusy = require("extended-ui/interact/player-busy");
 
 const RESCAN_TICKS = 30;
 const ARRIVE_PADDING = Vars.tilesize * 2;
@@ -20,7 +21,7 @@ Events.run(Trigger.update, () => {
     const unit = player.unit();
     if (unit.dead) return;
 
-    if (hasPlayerMoveInput()) {
+    if (hasPlayerMoveInput() || playerBusy.isPlayerInteracting()) {
         cached = null;
         return;
     }

@@ -1,6 +1,7 @@
 const timer = require("extended-ui/interact/interact-timer");
 const storageConfig = require("extended-ui/interact/storage-config");
 const coreLimits = require("extended-ui/interact/core-limits");
+const playerBusy = require("extended-ui/interact/player-busy");
 
 exports.isManagedStorage = function(block) {
     return block instanceof StorageBlock && !(block instanceof CoreBlock);
@@ -31,6 +32,7 @@ exports.isItemReservedForStorage = function(item, team) {
 
 Events.run(Trigger.update, () => {
     if (!Core.settings.getBool("eui-storage-fill", false) || !timer.canInteract()) return;
+    if (playerBusy.isPlayerInteracting()) return;
 
     const player = Vars.player;
     if (player.unit() == null) return;

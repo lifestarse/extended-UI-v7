@@ -12,6 +12,7 @@ const modules = [
     "input/core-drag",
     "input/conveyor",
 
+    "interact/player-busy",
     "interact/storage-fill",
     "interact/auto-fill",
     "interact/auto-collect",
