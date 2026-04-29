@@ -1,5 +1,7 @@
 const timer = require("extended-ui/interact/interact-timer");
 const coreLimits = require("extended-ui/interact/core-limits");
+const storageConfig = require("extended-ui/interact/storage-config");
+const storageFill = require("extended-ui/interact/storage-fill");
 
 Events.run(Trigger.update, () => {
     if (!Core.settings.getBool("eui-auto-fill", false) || !timer.canInteract()) return;
@@ -58,6 +60,7 @@ Events.run(Trigger.update, () => {
     if (!isCoreAvailible || !request || !player.within(core, Vars.buildingRange)) return;
 
     if (stack.amount) {
+        if (isItemReservedForStorage(stack.item, team)) return;
         Call.transferInventory(player, core);
         if (stack.amount > 0) {
             Call.dropItem(0);
@@ -67,6 +70,21 @@ Events.run(Trigger.update, () => {
     }
     timer.increase();
 });
+
+function isItemReservedForStorage(item, team) {
+    if (!Core.settings.getBool("eui-storage-fill", false)) return false;
+    let reserved = false;
+    Groups.build.each(b => {
+        if (reserved) return;
+        try {
+            if (b.team !== team) return;
+            if (!storageFill.isManagedStorage(b.block)) return;
+            const threshold = storageConfig.getThreshold(b, item);
+            if (threshold > 0 && b.items && b.items.get(item) < threshold) reserved = true;
+        } catch (e) {}
+    });
+    return reserved;
+}
 
 function getBestAmmo(turret, core) {
     let best = null;
