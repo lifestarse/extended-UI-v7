@@ -21,7 +21,7 @@ Events.run(Trigger.update, () => {
     const unit = player.unit();
     if (unit.dead) return;
 
-    if (hasPlayerMoveInput() || playerBusy.isPlayerInteracting()) {
+    if (playerBusy.isPlayerSteering()) {
         cached = null;
         return;
     }
@@ -44,16 +44,6 @@ Events.run(Trigger.update, () => {
     const v = Tmp.v1.set(dx / dist, dy / dist).scl(speed);
     unit.moveAt(v);
 });
-
-function hasPlayerMoveInput() {
-    try {
-        const x = Core.input.axis(Binding.move_x);
-        const y = Core.input.axis(Binding.move_y);
-        return Math.abs(x) > 0.1 || Math.abs(y) > 0.1;
-    } catch (e) {
-        return false;
-    }
-}
 
 function isStale(target, unit) {
     if (!target.b || target.b.dead || target.b.tile == null || target.b.tile.build !== target.b) return true;
