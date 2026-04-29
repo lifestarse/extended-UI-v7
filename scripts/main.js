@@ -13,6 +13,7 @@ const modules = [
     "input/conveyor",
 
     "interact/auto-fill",
+    "interact/auto-collect",
     "interact/auto-unit",
     "interact/schematic-selector",
 

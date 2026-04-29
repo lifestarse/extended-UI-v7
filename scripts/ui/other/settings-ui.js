@@ -1,4 +1,5 @@
 const coreLimits = require("extended-ui/interact/core-limits");
+const collectConfig = require("extended-ui/interact/collect-config");
 const iconsUtil = require("extended-ui/utils/icons");
 
 Events.on(EventType.ClientLoadEvent, () => {
@@ -12,6 +13,7 @@ Events.on(EventType.ClientLoadEvent, () => {
     extendedUIDialogSettings.buttons.defaults().size(240, 60);
 
     const coreLimitsDialog = buildCoreLimitsDialog();
+    const collectTargetsDialog = buildCollectTargetsDialog();
 
     extendedUIDialogSettings.cont.pane((() => {
 
@@ -44,6 +46,8 @@ Events.on(EventType.ClientLoadEvent, () => {
         contentTable.sliderPref("eui-maxZoom", 10, 1, 10, 1, i => i);
         contentTable.checkPref("eui-makeMineble", false);
         contentTable.checkPref("eui-showInteractSettings", true);
+        contentTable.checkPref("eui-auto-collect-factory", false);
+        contentTable.checkPref("eui-auto-collect-drill", false);
         contentTable.sliderPref("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
         if (!Vars.mobile) {
             contentTable.checkPref("eui-DragBlock", false);
@@ -59,9 +63,16 @@ Events.on(EventType.ClientLoadEvent, () => {
         Icon.box,
         () => coreLimitsDialog.show()
     ).width(360).height(50).pad(8);
+    extendedUIDialogSettings.cont.row();
+    extendedUIDialogSettings.cont.button(
+        Core.bundle.get("eui.collect-targets.open"),
+        Icon.box,
+        () => collectTargetsDialog.show()
+    ).width(360).height(50).pad(8);
 
     global.eui.settings = extendedUIDialogSettings;
     global.eui.coreLimitsDialog = coreLimitsDialog;
+    global.eui.collectTargetsDialog = collectTargetsDialog;
 });
 
 function buildCoreLimitsDialog() {
@@ -114,6 +125,75 @@ function buildCoreLimitsDialog() {
             fieldElement.setText(coreLimits.DEFAULT_LIMIT + "");
         }).size(36).pad(4).tooltip(Core.bundle.get("eui.core-limits.reset-tooltip"));
 
+        parent.row();
+    }
+
+    dialog.shown(() => rebuild());
+    return dialog;
+}
+
+function buildCollectTargetsDialog() {
+    const dialog = new BaseDialog(Core.bundle.get("eui.collect-targets.title"));
+    dialog.addCloseButton();
+
+    let listTable = null;
+    dialog.cont.add(Core.bundle.get("eui.collect-targets.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
+    dialog.cont.row();
+    dialog.cont.pane(t => { listTable = t; t.top(); }).grow().maxHeight(540);
+
+    function rebuild() {
+        if (!listTable) return;
+        listTable.clearChildren();
+
+        listTable.add(Core.bundle.get("eui.collect-targets.factories")).colspan(3).left().pad(8);
+        listTable.row();
+
+        const factories = [];
+        Vars.content.blocks().each(block => {
+            if (block instanceof GenericCrafter
+                && block.outputItems != null
+                && block.outputItems.length > 0
+                && !block.isHidden()) {
+                factories.push(block);
+            }
+        });
+        factories.sort((a, b) => a.id - b.id);
+
+        if (factories.length === 0) {
+            listTable.add(Core.bundle.get("eui.collect-targets.no-factories")).colspan(3).left().pad(8);
+            listTable.row();
+        } else {
+            for (let i = 0; i < factories.length; i++) {
+                addFactoryRow(listTable, factories[i]);
+            }
+        }
+
+        listTable.add(Core.bundle.get("eui.collect-targets.drills")).colspan(3).left().pad(8);
+        listTable.row();
+
+        const items = [];
+        Vars.content.items().each(item => items.push(item));
+        items.sort((a, b) => a.id - b.id);
+        for (let i = 0; i < items.length; i++) {
+            addDrillItemRow(listTable, items[i]);
+        }
+    }
+
+    function addFactoryRow(parent, block) {
+        parent.image(iconsUtil.getByName(block.name)).size(32).pad(4);
+        parent.add(block.localizedName).left().growX().pad(4);
+        parent.check("", collectConfig.isFactoryEnabled(block), b => {
+            collectConfig.setFactoryEnabled(block, b);
+        }).pad(4);
+        parent.row();
+    }
+
+    function addDrillItemRow(parent, item) {
+        parent.image(iconsUtil.getByName(item.name)).size(32).pad(4);
+        parent.add(item.localizedName).left().growX().pad(4);
+        parent.check("", collectConfig.isDrillItemEnabled(item), b => {
+            collectConfig.setDrillItemEnabled(item, b);
+        }).pad(4);
         parent.row();
     }
 
