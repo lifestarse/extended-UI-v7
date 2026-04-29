@@ -128,6 +128,7 @@ function findBestStorageNeed(unit, item, team) {
     if (!builds) return null;
     let bestB = null;
     let bestDeficit = 0;
+    const cap = (unit.type && unit.type.itemCapacity) || 0;
     builds.each(b => {
         try {
             if (!storageFill.isManagedStorage(b.block)) return;
@@ -136,8 +137,9 @@ function findBestStorageNeed(unit, item, team) {
             if (!b.items) return;
             const stock = b.items.get(item);
             if (stock >= threshold) return;
-            if (b.acceptStack(item, 5, unit) < 5) return;
             const deficit = threshold - stock;
+            if (cap > 0 && deficit < cap) return;
+            if (b.acceptStack(item, 5, unit) < 5) return;
             if (deficit > bestDeficit) {
                 bestDeficit = deficit;
                 bestB = b;
@@ -153,13 +155,14 @@ function findCoreFetchForStorage(unit, team) {
     if (!core) return null;
     const builds = teamBuildings(team);
     if (!builds) return null;
+    const cap = (unit.type && unit.type.itemCapacity) || 0;
     let chosen = null;
     builds.each(b => {
         if (chosen) return;
         try {
             if (!storageFill.isManagedStorage(b.block)) return;
             const item = storageConfig.findNeededItem(b, it =>
-                core.items.get(it) >= coreLimits.getLimit(it));
+                core.items.get(it) >= coreLimits.getLimit(it), cap);
             if (item) chosen = item;
         } catch (e) {}
     });

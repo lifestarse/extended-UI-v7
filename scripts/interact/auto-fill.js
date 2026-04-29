@@ -71,7 +71,7 @@ Events.run(Trigger.update, () => {
     if (!isCoreAvailible || !player.within(core, Vars.buildingRange)) return;
 
     if (stack.amount) {
-        if (storageFill.isItemReservedForStorage(stack.item, team)) return;
+        if (stack.amount >= minAmount && storageFill.isItemReservedForStorage(stack.item, team)) return;
         Call.transferInventory(player, core);
         if (stack.amount > 0) {
             Call.dropItem(0);

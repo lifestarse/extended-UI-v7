@@ -32,7 +32,11 @@ Events.run(Trigger.update, () => {
                 return;
             }
         }
-        if (storageFill.isItemReservedForStorage(stack.item, team)) return;
+        // Reservation only blocks core-dump when the drone is actually carrying
+        // enough for storage-fill / auto-fill to pick up (their minimum is 5).
+        // Otherwise the drone deadlocks: too few items to deliver anywhere, but
+        // forbidden from dumping back to core.
+        if (stack.amount >= 5 && storageFill.isItemReservedForStorage(stack.item, team)) return;
         if (core && player.within(core, Vars.buildingRange)) {
             Call.transferInventory(player, core);
             timer.increase();

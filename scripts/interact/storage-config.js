@@ -38,13 +38,16 @@ exports.countConfigured = function(b) {
     return count;
 }
 
-exports.findNeededItem = function(b, coreSupply) {
+exports.findNeededItem = function(b, coreSupply, minDeficit) {
     let result = null;
     Vars.content.items().each(item => {
         if (result) return;
         const threshold = exports.getThreshold(b, item);
         if (threshold <= 0) return;
-        if (!b.items || b.items.get(item) >= threshold) return;
+        if (!b.items) return;
+        const stock = b.items.get(item);
+        if (stock >= threshold) return;
+        if (minDeficit > 0 && (threshold - stock) < minDeficit) return;
         if (coreSupply && !coreSupply(item)) return;
         result = item;
     });
