@@ -6,6 +6,29 @@ exports.isManagedStorage = function(block) {
     return block instanceof StorageBlock && !(block instanceof CoreBlock);
 }
 
+exports.isItemReservedForStorage = function(item, team) {
+    if (!Core.settings.getBool("eui-storage-fill", false)) return false;
+    if (!team) return false;
+    const data = team.data();
+    if (!data || !data.buildings) return false;
+    const autopilot = Core.settings.getBool("eui-auto-pilot", false);
+    const player = Vars.player;
+    let reserved = false;
+    data.buildings.each(b => {
+        if (reserved) return;
+        try {
+            if (!exports.isManagedStorage(b.block)) return;
+            const threshold = storageConfig.getThreshold(b, item);
+            if (threshold <= 0) return;
+            if (!b.items || b.items.get(item) >= threshold) return;
+            if (autopilot || (player && player.within(b, Vars.buildingRange))) {
+                reserved = true;
+            }
+        } catch (e) {}
+    });
+    return reserved;
+}
+
 Events.run(Trigger.update, () => {
     if (!Core.settings.getBool("eui-storage-fill", false) || !timer.canInteract()) return;
 

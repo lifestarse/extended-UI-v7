@@ -1,5 +1,6 @@
 const timer = require("extended-ui/interact/interact-timer");
 const collectConfig = require("extended-ui/interact/collect-config");
+const storageFill = require("extended-ui/interact/storage-fill");
 
 Events.run(Trigger.update, () => {
     if (!timer.canInteract()) return;
@@ -16,6 +17,7 @@ Events.run(Trigger.update, () => {
     const core = player.closestCore();
 
     if (stack.amount > 0) {
+        if (storageFill.isItemReservedForStorage(stack.item, team)) return;
         if (core && player.within(core, Vars.buildingRange)) {
             Call.transferInventory(player, core);
             timer.increase();
