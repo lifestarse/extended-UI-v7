@@ -20,6 +20,7 @@ const modules = [
     "interact/schematic-selector",
 
     "ui/other/settings-ui",
+    "ui/blocks/storage-click-ui",
     "ui/other/schematics-table-ui",
     "ui/other/power-ui",
     "ui/other/resource-rate-ui",
