@@ -21,7 +21,6 @@ const modules = [
     "interact/schematic-selector",
 
     "ui/other/settings-ui",
-    "ui/other/task-priority-overlay",
     "ui/blocks/storage-click-ui",
     "ui/blocks/storage-hover-ui",
     "ui/other/schematics-table-ui",

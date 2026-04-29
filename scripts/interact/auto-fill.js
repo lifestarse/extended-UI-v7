@@ -1,7 +1,7 @@
 const timer = require("extended-ui/interact/interact-timer");
 const coreLimits = require("extended-ui/interact/core-limits");
 const storageFill = require("extended-ui/interact/storage-fill");
-const turretConfig = require("extended-ui/interact/turret-config");
+const consumerConfig = require("extended-ui/interact/consumer-config");
 const playerBusy = require("extended-ui/interact/player-busy");
 
 Events.run(Trigger.update, () => {
@@ -25,12 +25,11 @@ Events.run(Trigger.update, () => {
 
         const block = b.tile.block();
         if (block instanceof ItemTurret && !turretsOn) return;
+        if (!consumerConfig.isEnabled(block)) return;
         if (!block.consumers.find(c => c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic)) return;
         let blockPriority = config.get(block.name, 0);
-        if (block instanceof ItemTurret) {
-            const custom = turretConfig.getPriority(block);
-            if (custom > 0) blockPriority = custom;
-        }
+        const custom = consumerConfig.getPriority(block);
+        if (custom > 0) blockPriority = custom;
 
         // We want insert requests to have priority over deposit requests
         if (blockPriority < requestPriority) return;

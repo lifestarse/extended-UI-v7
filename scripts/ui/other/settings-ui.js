@@ -2,7 +2,7 @@ const coreLimits = require("extended-ui/interact/core-limits");
 const collectConfig = require("extended-ui/interact/collect-config");
 const storageConfig = require("extended-ui/interact/storage-config");
 const storageFill = require("extended-ui/interact/storage-fill");
-const turretConfig = require("extended-ui/interact/turret-config");
+const consumerConfig = require("extended-ui/interact/consumer-config");
 const taskPriority = require("extended-ui/interact/task-priority");
 const storageEditDialog = require("extended-ui/ui/dialogs/storage-edit-dialog");
 const iconsUtil = require("extended-ui/utils/icons");
@@ -20,7 +20,6 @@ Events.on(EventType.ClientLoadEvent, () => {
     const coreLimitsDialog = buildCoreLimitsDialog();
     const collectTargetsDialog = buildCollectTargetsDialog();
     const storageListDialog = buildStorageListDialog();
-    const turretPriorityDialog = buildTurretPriorityDialog();
     const taskPriorityDialog = buildTaskPriorityDialog();
 
     extendedUIDialogSettings.cont.pane((() => {
@@ -63,7 +62,6 @@ Events.on(EventType.ClientLoadEvent, () => {
         contentTable.checkPref("eui-storage-hover-ui", true);
         contentTable.checkPref("eui-auto-fill-turrets", true);
         contentTable.checkPref("eui-auto-pilot", false);
-        contentTable.checkPref("eui-task-overlay", false);
         contentTable.sliderPref("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
         if (!Vars.mobile) {
             contentTable.checkPref("eui-DragBlock", false);
@@ -93,12 +91,6 @@ Events.on(EventType.ClientLoadEvent, () => {
     ).width(360).height(50).pad(8);
     extendedUIDialogSettings.cont.row();
     extendedUIDialogSettings.cont.button(
-        Core.bundle.get("eui.turret-priority.open"),
-        Icon.box,
-        () => turretPriorityDialog.show()
-    ).width(360).height(50).pad(8);
-    extendedUIDialogSettings.cont.row();
-    extendedUIDialogSettings.cont.button(
         Core.bundle.get("eui.task-priority.open"),
         Icon.box,
         () => taskPriorityDialog.show()
@@ -108,7 +100,6 @@ Events.on(EventType.ClientLoadEvent, () => {
     global.eui.coreLimitsDialog = coreLimitsDialog;
     global.eui.collectTargetsDialog = collectTargetsDialog;
     global.eui.storageListDialog = storageListDialog;
-    global.eui.turretPriorityDialog = turretPriorityDialog;
     global.eui.taskPriorityDialog = taskPriorityDialog;
 });
 
@@ -299,82 +290,6 @@ function buildStorageListDialog() {
     return dialog;
 }
 
-function buildTurretPriorityDialog() {
-    const dialog = new BaseDialog(Core.bundle.get("eui.turret-priority.title"));
-    dialog.addCloseButton();
-
-    let turretBlocks = [];
-
-    dialog.buttons.button(Core.bundle.get("eui.turret-priority.reset-all"), () => {
-        Vars.ui.showConfirm(
-            Core.bundle.get("eui.turret-priority.reset-all"),
-            Core.bundle.get("eui.turret-priority.reset-confirm"),
-            () => {
-                for (let i = 0; i < turretBlocks.length; i++) {
-                    turretConfig.setPriority(turretBlocks[i], 0);
-                }
-                rebuild();
-            }
-        );
-    }).size(240, 60);
-
-    let listTable = null;
-    dialog.cont.add(Core.bundle.get("eui.turret-priority.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
-    dialog.cont.row();
-    dialog.cont.pane(t => { listTable = t; t.top(); }).grow().maxHeight(540);
-
-    function rebuild() {
-        if (!listTable) return;
-        listTable.clearChildren();
-        turretBlocks = [];
-        Vars.content.blocks().each(block => {
-            if (block instanceof ItemTurret && !block.isHidden()) {
-                turretBlocks.push(block);
-            }
-        });
-        turretBlocks.sort((a, b) => {
-            const pa = turretConfig.getPriority(a);
-            const pb = turretConfig.getPriority(b);
-            if (pa !== pb) return pb - pa;
-            return a.id - b.id;
-        });
-
-        if (turretBlocks.length === 0) {
-            listTable.add(Core.bundle.get("eui.turret-priority.empty")).pad(8);
-            return;
-        }
-
-        for (let i = 0; i < turretBlocks.length; i++) {
-            addRow(listTable, turretBlocks[i]);
-        }
-    }
-
-    function addRow(parent, block) {
-        parent.image(iconsUtil.getByName(block.name)).size(32).pad(4);
-        parent.add(block.localizedName).left().width(180).pad(4);
-
-        const fieldCell = parent.field(turretConfig.getPriority(block) + "", text => {
-            const v = parseInt(text);
-            if (!isNaN(v)) {
-                turretConfig.setPriority(block, Math.max(0, Math.min(turretConfig.MAX_PRIORITY, v)));
-            }
-        });
-        fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= turretConfig.MAX_PRIORITY);
-        fieldCell.width(110).pad(4);
-        const fieldElement = fieldCell.get();
-
-        parent.button(Icon.cancel, Styles.cleari, () => {
-            turretConfig.setPriority(block, 0);
-            fieldElement.setText("0");
-        }).size(36).pad(4);
-
-        parent.row();
-    }
-
-    dialog.shown(() => rebuild());
-    return dialog;
-}
-
 function buildTaskPriorityDialog() {
     const dialog = new BaseDialog(Core.bundle.get("eui.task-priority.title"));
     dialog.addCloseButton();
@@ -390,26 +305,61 @@ function buildTaskPriorityDialog() {
 
     dialog.cont.add(Core.bundle.get("eui.task-priority.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
     dialog.cont.row();
-    dialog.cont.pane(t => { listTable = t; t.top(); }).grow().maxHeight(540);
+    dialog.cont.pane(t => { listTable = t; t.top(); }).grow().maxHeight(560);
 
     function rebuild() {
         if (!listTable) return;
         listTable.clearChildren();
+
+        listTable.add(Core.bundle.get("eui.task-priority.section-tasks")).left().colspan(4).pad(8);
+        listTable.row();
         const tasks = taskPriority.TASKS.slice();
         tasks.sort((a, b) => taskPriority.get(b.id) - taskPriority.get(a.id));
         for (let i = 0; i < tasks.length; i++) {
-            addRow(listTable, tasks[i]);
+            addTaskRow(listTable, tasks[i]);
+        }
+
+        listTable.add(Core.bundle.get("eui.task-priority.section-consumers")).left().colspan(4).pad(8).padTop(20);
+        listTable.row();
+
+        const byCategory = {};
+        for (let i = 0; i < consumerConfig.CATEGORIES.length; i++) {
+            byCategory[consumerConfig.CATEGORIES[i]] = [];
+        }
+        Vars.content.blocks().each(block => {
+            try {
+                if (block.isHidden()) return;
+                if (!consumerConfig.consumesItems(block)) return;
+                const cat = consumerConfig.categorize(block);
+                byCategory[cat].push(block);
+            } catch (e) {}
+        });
+
+        for (let i = 0; i < consumerConfig.CATEGORIES.length; i++) {
+            const cat = consumerConfig.CATEGORIES[i];
+            const blocks = byCategory[cat];
+            if (blocks.length === 0) continue;
+            blocks.sort((a, b) => {
+                const pa = consumerConfig.getPriority(a);
+                const pb = consumerConfig.getPriority(b);
+                if (pa !== pb) return pb - pa;
+                return a.id - b.id;
+            });
+            addCategoryHeader(listTable, cat, blocks);
+            if (consumerConfig.isCategoryExpanded(cat)) {
+                for (let j = 0; j < blocks.length; j++) {
+                    addBlockRow(listTable, blocks[j]);
+                }
+            }
         }
     }
 
-    function addRow(parent, task) {
-        parent.add(Core.bundle.get(task.bundleKey)).left().width(280).pad(4);
+    function addTaskRow(parent, task) {
+        parent.add(Core.bundle.get(task.bundleKey)).left().colspan(2).width(360).pad(4);
 
         const fieldCell = parent.field(taskPriority.get(task.id) + "", text => {
             const v = parseInt(text);
-            if (!isNaN(v)) {
-                taskPriority.set(task.id, Math.max(0, Math.min(999, v)));
-            }
+            if (!isNaN(v)) taskPriority.set(task.id, Math.max(0, Math.min(999, v)));
         });
         fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= 999);
         fieldCell.width(110).pad(4);
@@ -419,6 +369,37 @@ function buildTaskPriorityDialog() {
             taskPriority.reset(task.id);
             fieldElement.setText(task.defaultPriority + "");
         }).size(36).pad(4);
+
+        parent.row();
+    }
+
+    function addCategoryHeader(parent, category, blocks) {
+        const expanded = consumerConfig.isCategoryExpanded(category);
+        const label = (expanded ? "[ - ] " : "[ + ] ")
+            + Core.bundle.get("eui.task-priority.cat-" + category)
+            + " (" + blocks.length + ")";
+        parent.button(label, Styles.cleart, () => {
+            consumerConfig.setCategoryExpanded(category, !consumerConfig.isCategoryExpanded(category));
+            rebuild();
+        }).colspan(4).left().growX().pad(4);
+        parent.row();
+    }
+
+    function addBlockRow(parent, block) {
+        parent.image(iconsUtil.getByName(block.name)).size(28).pad(2).padLeft(20);
+
+        parent.check("", consumerConfig.isEnabled(block), v => {
+            consumerConfig.setEnabled(block, v);
+        }).pad(4);
+
+        parent.add(block.localizedName).left().growX().pad(4);
+
+        const fieldCell = parent.field(consumerConfig.getPriority(block) + "", text => {
+            const v = parseInt(text);
+            if (!isNaN(v)) consumerConfig.setPriority(block, Math.max(0, Math.min(consumerConfig.MAX_PRIORITY, v)));
+        });
+        fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= consumerConfig.MAX_PRIORITY);
+        fieldCell.width(80).pad(4);
 
         parent.row();
     }
