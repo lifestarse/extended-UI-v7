@@ -2,12 +2,6 @@ const timer = require("extended-ui/interact/interact-timer");
 const storageConfig = require("extended-ui/interact/storage-config");
 const coreLimits = require("extended-ui/interact/core-limits");
 
-const StorageBlock = Packages.mindustry.world.blocks.storage.StorageBlock;
-const CoreBlock = Packages.mindustry.world.blocks.storage.CoreBlock;
-
-exports.StorageBlock = StorageBlock;
-exports.CoreBlock = CoreBlock;
-
 exports.isManagedStorage = function(block) {
     return block instanceof StorageBlock && !(block instanceof CoreBlock);
 }
