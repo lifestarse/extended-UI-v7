@@ -3,9 +3,17 @@ const PRIORITY_PREFIX = "eui-consumer-priority-";
 const EXPANDED_PREFIX = "eui-consumer-cat-expanded-";
 const LEGACY_TURRET_PRIORITY_PREFIX = "eui-turret-priority-";
 const MAX_PRIORITY = 999;
+const MIN_AMOUNT_KEY = "eui-auto-fill-min-amount";
+const DEFAULT_MIN_AMOUNT = 5;
 
 exports.MAX_PRIORITY = MAX_PRIORITY;
+exports.DEFAULT_MIN_AMOUNT = DEFAULT_MIN_AMOUNT;
 exports.CATEGORIES = ["turrets", "crafters", "unit-factories", "generators", "other"];
+
+exports.getMinAmount = function() {
+    const v = Core.settings.getInt(MIN_AMOUNT_KEY, DEFAULT_MIN_AMOUNT);
+    return v > 0 ? v : DEFAULT_MIN_AMOUNT;
+}
 
 exports.isEnabled = function(block) {
     return Core.settings.getBool(ENABLED_PREFIX + block.name, true);

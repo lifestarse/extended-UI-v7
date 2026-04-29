@@ -62,6 +62,7 @@ Events.on(EventType.ClientLoadEvent, () => {
         contentTable.checkPref("eui-storage-click-ui", true);
         contentTable.checkPref("eui-storage-hover-ui", true);
         contentTable.checkPref("eui-auto-fill-turrets", true);
+        contentTable.sliderPref("eui-auto-fill-min-amount", consumerConfig.DEFAULT_MIN_AMOUNT, 1, 50, 1, i => i);
         contentTable.checkPref("eui-auto-pilot", false);
         contentTable.sliderPref("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
         if (!Vars.mobile) {

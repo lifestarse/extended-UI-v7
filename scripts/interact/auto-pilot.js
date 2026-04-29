@@ -4,6 +4,7 @@ const storageFill = require("extended-ui/interact/storage-fill");
 const coreLimits = require("extended-ui/interact/core-limits");
 const playerBusy = require("extended-ui/interact/player-busy");
 const taskPriority = require("extended-ui/interact/task-priority");
+const consumerConfig = require("extended-ui/interact/consumer-config");
 
 const RESCAN_TICKS = 30;
 const ARRIVE_PADDING = Vars.tilesize * 2;
@@ -171,6 +172,7 @@ function findBestConsumer(unit, item, team) {
     if (!builds) return null;
     let bestB = null;
     let bestStock = Infinity;
+    const minAmount = consumerConfig.getMinAmount();
 
     builds.each(b => {
         try {
@@ -179,7 +181,7 @@ function findBestConsumer(unit, item, team) {
             const wantsItem = block.consumers.find(c =>
                 c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);
             if (!wantsItem) return;
-            if (b.acceptStack(item, 5, unit) < 5) return;
+            if (b.acceptStack(item, minAmount, unit) < minAmount) return;
 
             const stock = b.items ? b.items.get(item) : 0;
             if (stock < bestStock) {

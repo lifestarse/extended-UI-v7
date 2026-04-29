@@ -20,6 +20,8 @@ Events.run(Trigger.update, () => {
     let config = Core.settings.getJson("eui.autofill.priority", ObjectMap, () => new ObjectMap());
 
     const turretsOn = Core.settings.getBool("eui-auto-fill-turrets", true);
+    const minAmount = consumerConfig.getMinAmount();
+    const probeAmount = Math.max(20, minAmount);
 
     Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, b => {
         if (!timer.canInteract()) return;
@@ -36,7 +38,7 @@ Events.run(Trigger.update, () => {
         if (blockPriority < requestPriority) return;
         if (blockPriority == requestPriority && request instanceof Building) return;
 
-        if (b.acceptStack(stack.item, stack.amount, player.unit()) >= 5) {
+        if (b.acceptStack(stack.item, stack.amount, player.unit()) >= minAmount) {
             request = b;
             requestPriority = blockPriority;
             return;
@@ -50,9 +52,9 @@ Events.run(Trigger.update, () => {
             if (!b.ammo.isEmpty()) return;
             newRequest = getBestAmmo(block, core);
         } else if (block instanceof UnitFactory) {
-            newRequest = getUnitFactoryRequest(b, block, core);
+            newRequest = getUnitFactoryRequest(b, block, core, minAmount, probeAmount);
         } else if (b.items) {
-            newRequest = getItemRequest(b, block, core);
+            newRequest = getItemRequest(b, block, core, minAmount, probeAmount);
         }
         if (newRequest) {
             request = newRequest;
@@ -100,32 +102,32 @@ function getBestAmmo(turret, core) {
     return best;
 }
 
-function getUnitFactoryRequest(build, block, core) {
+function getUnitFactoryRequest(build, block, core, minAmount, probeAmount) {
     if (build.currentPlan == -1) return null;
     const stacks = block.plans.get(build.currentPlan).requirements
 
-    return findRequiredItem(stacks, build, core);
+    return findRequiredItem(stacks, build, core, minAmount, probeAmount);
 }
 
-function getItemRequest(build, block, core) {
+function getItemRequest(build, block, core, minAmount, probeAmount) {
     const consumesItems = block.consumers.find(c => c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);
     if (!consumesItems) return null;
 
     if (consumesItems instanceof ConsumeItemFilter) {
-        return getFilterRequest(consumesItems, build, core);
+        return getFilterRequest(consumesItems, build, core, minAmount, probeAmount);
     } else if (consumesItems instanceof ConsumeItems) {
-        return findRequiredItem(consumesItems.items, build, core);
+        return findRequiredItem(consumesItems.items, build, core, minAmount, probeAmount);
     } else {
         return null;
     }
 }
 
-function getFilterRequest(filter, build, core) {
+function getFilterRequest(filter, build, core, minAmount, probeAmount) {
     let request = null;
     let stop = false;
     Vars.content.items().each(item => {
         if (filter.filter.get(item) && item != Items.blastCompound && core.items.get(item) >= coreLimits.getLimit(item)) {
-            if (build.acceptStack(item, 20, Vars.player.unit()) >= 5 && request == null && !stop) {
+            if (build.acceptStack(item, probeAmount, Vars.player.unit()) >= minAmount && request == null && !stop) {
                 request = item;
             } else {
                 stop = true;
@@ -135,10 +137,10 @@ function getFilterRequest(filter, build, core) {
     return request;
 }
 
-function findRequiredItem(stacks, build, core) {
+function findRequiredItem(stacks, build, core, minAmount, probeAmount) {
     for (let itemStack of stacks) {
         let item = itemStack.item;
-        if (core.items.get(item) >= coreLimits.getLimit(item) && build.acceptStack(item, 20, Vars.player.unit()) >= 5) {
+        if (core.items.get(item) >= coreLimits.getLimit(item) && build.acceptStack(item, probeAmount, Vars.player.unit()) >= minAmount) {
             return item;
         }
     }
