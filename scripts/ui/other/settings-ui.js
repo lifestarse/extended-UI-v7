@@ -2,6 +2,7 @@ const coreLimits = require("extended-ui/interact/core-limits");
 const collectConfig = require("extended-ui/interact/collect-config");
 const storageConfig = require("extended-ui/interact/storage-config");
 const storageFill = require("extended-ui/interact/storage-fill");
+const turretConfig = require("extended-ui/interact/turret-config");
 const storageEditDialog = require("extended-ui/ui/dialogs/storage-edit-dialog");
 const iconsUtil = require("extended-ui/utils/icons");
 
@@ -18,6 +19,7 @@ Events.on(EventType.ClientLoadEvent, () => {
     const coreLimitsDialog = buildCoreLimitsDialog();
     const collectTargetsDialog = buildCollectTargetsDialog();
     const storageListDialog = buildStorageListDialog();
+    const turretPriorityDialog = buildTurretPriorityDialog();
 
     extendedUIDialogSettings.cont.pane((() => {
 
@@ -57,6 +59,7 @@ Events.on(EventType.ClientLoadEvent, () => {
         contentTable.checkPref("eui-storage-fill", false);
         contentTable.checkPref("eui-storage-click-ui", true);
         contentTable.checkPref("eui-storage-hover-ui", true);
+        contentTable.checkPref("eui-auto-fill-turrets", true);
         contentTable.checkPref("eui-auto-pilot", false);
         contentTable.sliderPref("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
         if (!Vars.mobile) {
@@ -85,11 +88,18 @@ Events.on(EventType.ClientLoadEvent, () => {
         Icon.box,
         () => storageListDialog.show()
     ).width(360).height(50).pad(8);
+    extendedUIDialogSettings.cont.row();
+    extendedUIDialogSettings.cont.button(
+        Core.bundle.get("eui.turret-priority.open"),
+        Icon.box,
+        () => turretPriorityDialog.show()
+    ).width(360).height(50).pad(8);
 
     global.eui.settings = extendedUIDialogSettings;
     global.eui.coreLimitsDialog = coreLimitsDialog;
     global.eui.collectTargetsDialog = collectTargetsDialog;
     global.eui.storageListDialog = storageListDialog;
+    global.eui.turretPriorityDialog = turretPriorityDialog;
 });
 
 function buildCoreLimitsDialog() {
@@ -270,6 +280,82 @@ function buildStorageListDialog() {
 
         parent.button(Icon.pencil, Styles.cleari, () => {
             storageEditDialog.build(building, () => rebuild()).show();
+        }).size(36).pad(4);
+
+        parent.row();
+    }
+
+    dialog.shown(() => rebuild());
+    return dialog;
+}
+
+function buildTurretPriorityDialog() {
+    const dialog = new BaseDialog(Core.bundle.get("eui.turret-priority.title"));
+    dialog.addCloseButton();
+
+    let turretBlocks = [];
+
+    dialog.buttons.button(Core.bundle.get("eui.turret-priority.reset-all"), () => {
+        Vars.ui.showConfirm(
+            Core.bundle.get("eui.turret-priority.reset-all"),
+            Core.bundle.get("eui.turret-priority.reset-confirm"),
+            () => {
+                for (let i = 0; i < turretBlocks.length; i++) {
+                    turretConfig.setPriority(turretBlocks[i], 0);
+                }
+                rebuild();
+            }
+        );
+    }).size(240, 60);
+
+    let listTable = null;
+    dialog.cont.add(Core.bundle.get("eui.turret-priority.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
+    dialog.cont.row();
+    dialog.cont.pane(t => { listTable = t; t.top(); }).grow().maxHeight(540);
+
+    function rebuild() {
+        if (!listTable) return;
+        listTable.clearChildren();
+        turretBlocks = [];
+        Vars.content.blocks().each(block => {
+            if (block instanceof ItemTurret && !block.isHidden()) {
+                turretBlocks.push(block);
+            }
+        });
+        turretBlocks.sort((a, b) => {
+            const pa = turretConfig.getPriority(a);
+            const pb = turretConfig.getPriority(b);
+            if (pa !== pb) return pb - pa;
+            return a.id - b.id;
+        });
+
+        if (turretBlocks.length === 0) {
+            listTable.add(Core.bundle.get("eui.turret-priority.empty")).pad(8);
+            return;
+        }
+
+        for (let i = 0; i < turretBlocks.length; i++) {
+            addRow(listTable, turretBlocks[i]);
+        }
+    }
+
+    function addRow(parent, block) {
+        parent.image(iconsUtil.getByName(block.name)).size(32).pad(4);
+        parent.add(block.localizedName).left().width(180).pad(4);
+
+        const fieldCell = parent.field(turretConfig.getPriority(block) + "", text => {
+            const v = parseInt(text);
+            if (!isNaN(v)) {
+                turretConfig.setPriority(block, Math.max(0, Math.min(turretConfig.MAX_PRIORITY, v)));
+            }
+        });
+        fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= turretConfig.MAX_PRIORITY);
+        fieldCell.width(110).pad(4);
+        const fieldElement = fieldCell.get();
+
+        parent.button(Icon.cancel, Styles.cleari, () => {
+            turretConfig.setPriority(block, 0);
+            fieldElement.setText("0");
         }).size(36).pad(4);
 
         parent.row();

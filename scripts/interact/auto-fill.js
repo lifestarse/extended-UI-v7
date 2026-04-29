@@ -2,6 +2,7 @@ const timer = require("extended-ui/interact/interact-timer");
 const coreLimits = require("extended-ui/interact/core-limits");
 const storageConfig = require("extended-ui/interact/storage-config");
 const storageFill = require("extended-ui/interact/storage-fill");
+const turretConfig = require("extended-ui/interact/turret-config");
 
 Events.run(Trigger.update, () => {
     if (!Core.settings.getBool("eui-auto-fill", false) || !timer.canInteract()) return;
@@ -16,12 +17,19 @@ Events.run(Trigger.update, () => {
     let requestPriority = -1;
     let config = Core.settings.getJson("eui.autofill.priority", ObjectMap, () => new ObjectMap());
 
+    const turretsOn = Core.settings.getBool("eui-auto-fill-turrets", true);
+
     Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, b => {
         if (!timer.canInteract()) return;
 
         const block = b.tile.block();
+        if (block instanceof ItemTurret && !turretsOn) return;
         if (!block.consumers.find(c => c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic)) return;
-        const blockPriority = config.get(block.name, 0);
+        let blockPriority = config.get(block.name, 0);
+        if (block instanceof ItemTurret) {
+            const custom = turretConfig.getPriority(block);
+            if (custom > 0) blockPriority = custom;
+        }
 
         // We want insert requests to have priority over deposit requests
         if (blockPriority < requestPriority) return;
