@@ -17,6 +17,13 @@ exports.isPlayerInteracting = function() {
 // same time as the player".
 exports.isPlayerSteering = function() {
     if (exports.isPlayerInteracting()) return true;
+    // The InputHandler (DesktopInput / MobileInput / gamepad) keeps a
+    // computed movement vector regardless of input source. If non-zero,
+    // the player is steering somehow.
+    try {
+        const ih = Vars.control ? Vars.control.input : null;
+        if (ih && ih.movement && (Math.abs(ih.movement.x) > 0.1 || Math.abs(ih.movement.y) > 0.1)) return true;
+    } catch (e) {}
     // Default WASD / arrow keys via physical scancodes -- works on any
     // keyboard layout for the default mapping without depending on the
     // Binding API round-tripping correctly through Rhino.
