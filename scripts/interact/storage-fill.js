@@ -36,18 +36,26 @@ Events.run(Trigger.update, () => {
 
     if (!core || !player.within(core, Vars.buildingRange)) return;
 
+    const autopilotOn = Core.settings.getBool("eui-auto-pilot", false);
     let neededItem = null;
-    const data = team.data();
-    if (data && data.buildings) {
-        data.buildings.each(b => {
-            if (neededItem) return;
-            try {
-                if (!exports.isManagedStorage(b.block)) return;
-                const item = storageConfig.findNeededItem(b, it =>
-                    core.items.get(it) >= coreLimits.getLimit(it));
-                if (item) neededItem = item;
-            } catch (e) {}
-        });
+
+    const checkStorage = b => {
+        if (neededItem) return;
+        try {
+            if (!exports.isManagedStorage(b.block)) return;
+            const item = storageConfig.findNeededItem(b, it =>
+                core.items.get(it) >= coreLimits.getLimit(it));
+            if (item) neededItem = item;
+        } catch (e) {}
+    };
+
+    if (autopilotOn) {
+        const data = team.data();
+        if (data && data.buildings) {
+            data.buildings.each(checkStorage);
+        }
+    } else {
+        Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, checkStorage);
     }
 
     if (neededItem) {
