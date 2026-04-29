@@ -11,11 +11,18 @@ exports.getKey = function(item) {
 }
 
 exports.getLimit = function(item) {
-    return Core.settings.getInt(KEY_PREFIX + item.name, DEFAULT_LIMIT);
+    try {
+        const raw = Core.settings.getString(KEY_PREFIX + item.name, "");
+        if (!raw) return DEFAULT_LIMIT;
+        const v = parseInt(raw);
+        return isNaN(v) ? DEFAULT_LIMIT : v;
+    } catch (e) {
+        return DEFAULT_LIMIT;
+    }
 }
 
 exports.setLimit = function(item, value) {
-    Core.settings.put(KEY_PREFIX + item.name, value | 0);
+    Core.settings.put(KEY_PREFIX + item.name, ((value | 0)) + "");
 }
 
 exports.resetLimit = function(item) {
