@@ -47,7 +47,7 @@ Events.run(Trigger.update, () => {
 
 function isStale(target, unit) {
     if (!target.b || target.b.dead || target.b.tile == null || target.b.tile.build !== target.b) return true;
-    if (target.kind === "core-fetch") return false;
+    if (target.kind === "core-fetch" || target.kind === "core-dump") return false;
     const stack = unit.stack;
     if (stack.amount > 0 && stack.item) {
         if (!target.expectsConsumer) return true;
@@ -71,6 +71,12 @@ function pickTarget(unit, team) {
         if (storageOn) {
             const s = findBestStorageNeed(unit, stack.item, team);
             if (s) return s;
+        }
+        // Nothing wants this item -- route to core to dump it so the
+        // drone doesn't get stuck holding useless cargo.
+        const dumpCore = Vars.player.closestCore();
+        if (dumpCore) {
+            return { x: dumpCore.x, y: dumpCore.y, b: dumpCore, item: stack.item, expectsConsumer: false, kind: "core-dump" };
         }
         return null;
     }

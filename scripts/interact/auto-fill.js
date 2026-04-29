@@ -66,7 +66,7 @@ Events.run(Trigger.update, () => {
         return;
     }
 
-    if (!isCoreAvailible || !request || !player.within(core, Vars.buildingRange)) return;
+    if (!isCoreAvailible || !player.within(core, Vars.buildingRange)) return;
 
     if (stack.amount) {
         if (storageFill.isItemReservedForStorage(stack.item, team)) return;
@@ -74,10 +74,11 @@ Events.run(Trigger.update, () => {
         if (stack.amount > 0) {
             Call.dropItem(0);
         }
-    } else {
+        timer.increase();
+    } else if (request) {
         Call.requestItem(player, core, request, 999);
+        timer.increase();
     }
-    timer.increase();
 });
 
 function getBestAmmo(turret, core) {
