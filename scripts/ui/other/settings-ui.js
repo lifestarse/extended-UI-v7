@@ -8,6 +8,15 @@ const taskPriority = require("extended-ui/interact/task-priority");
 const storageEditDialog = require("extended-ui/ui/dialogs/storage-edit-dialog");
 const iconsUtil = require("extended-ui/utils/icons");
 
+// Background drawable used to frame each list row in the sub-dialogs. Tex.pane
+// is the standard Mindustry panel skin; if it isn't on this build for some
+// reason, fall back to Tex.button (a slightly stronger button frame).
+const ROW_BG = (function() {
+    try { if (Tex.pane != null) return Tex.pane; } catch (e) {}
+    try { return Tex.button; } catch (e) {}
+    return null;
+})();
+
 // === Per-sub-dialog reset helpers ============================================
 // Each one removes only the prefix-keyed Core.settings entries that its own
 // dialog owns. We enumerate keys directly from Vars.content (items, blocks,
@@ -283,29 +292,30 @@ function buildCoreLimitsDialog() {
     }
 
     function addItemRow(parent, item) {
-        parent.image(iconsUtil.getByName(item.name)).size(32).pad(4);
-        parent.add(item.localizedName).left().width(140).pad(4);
+        parent.table(ROW_BG, row => {
+            row.image(iconsUtil.getByName(item.name)).size(32).pad(4);
+            row.add(item.localizedName).left().width(140).pad(4);
 
-        parent.check("", coreLimits.isOverridden(item), b => {
-            coreLimits.setOverridden(item, b);
-        }).pad(4).tooltip(Core.bundle.get("eui.core-limits.override-tooltip"));
+            row.check("", coreLimits.isOverridden(item), b => {
+                coreLimits.setOverridden(item, b);
+            }).pad(4).tooltip(Core.bundle.get("eui.core-limits.override-tooltip"));
 
-        const fieldCell = parent.field(coreLimits.getStoredLimit(item) + "", text => {
-            const v = parseInt(text);
-            if (!isNaN(v)) {
-                const clamped = Math.max(0, Math.min(coreLimits.LIMIT_MAX, v));
-                coreLimits.setLimit(item, clamped);
-            }
-        });
-        fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= coreLimits.LIMIT_MAX);
-        fieldCell.width(110).pad(4);
-        const fieldElement = fieldCell.get();
+            const fieldCell = row.field(coreLimits.getStoredLimit(item) + "", text => {
+                const v = parseInt(text);
+                if (!isNaN(v)) {
+                    const clamped = Math.max(0, Math.min(coreLimits.LIMIT_MAX, v));
+                    coreLimits.setLimit(item, clamped);
+                }
+            });
+            fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= coreLimits.LIMIT_MAX);
+            fieldCell.width(110).pad(4);
+            const fieldElement = fieldCell.get();
 
-        parent.button(Icon.cancel, Styles.cleari, () => {
-            coreLimits.resetLimit(item);
-            fieldElement.setText(coreLimits.DEFAULT_LIMIT + "");
-        }).size(36).pad(4).tooltip(Core.bundle.get("eui.core-limits.reset-tooltip"));
-
+            row.button(Icon.cancel, Styles.cleari, () => {
+                coreLimits.resetLimit(item);
+                fieldElement.setText(coreLimits.DEFAULT_LIMIT + "");
+            }).size(36).pad(4).tooltip(Core.bundle.get("eui.core-limits.reset-tooltip"));
+        }).growX().pad(2);
         parent.row();
     }
 
@@ -365,20 +375,24 @@ function buildCollectTargetsDialog() {
     }
 
     function addFactoryRow(parent, block) {
-        parent.image(iconsUtil.getByName(block.name)).size(32).pad(4);
-        parent.add(block.localizedName).left().growX().pad(4);
-        parent.check("", collectConfig.isFactoryEnabled(block), b => {
-            collectConfig.setFactoryEnabled(block, b);
-        }).pad(4);
+        parent.table(ROW_BG, row => {
+            row.image(iconsUtil.getByName(block.name)).size(32).pad(4);
+            row.add(block.localizedName).left().growX().pad(4);
+            row.check("", collectConfig.isFactoryEnabled(block), b => {
+                collectConfig.setFactoryEnabled(block, b);
+            }).pad(4);
+        }).growX().pad(2);
         parent.row();
     }
 
     function addDrillItemRow(parent, item) {
-        parent.image(iconsUtil.getByName(item.name)).size(32).pad(4);
-        parent.add(item.localizedName).left().growX().pad(4);
-        parent.check("", collectConfig.isDrillItemEnabled(item), b => {
-            collectConfig.setDrillItemEnabled(item, b);
-        }).pad(4);
+        parent.table(ROW_BG, row => {
+            row.image(iconsUtil.getByName(item.name)).size(32).pad(4);
+            row.add(item.localizedName).left().growX().pad(4);
+            row.check("", collectConfig.isDrillItemEnabled(item), b => {
+                collectConfig.setDrillItemEnabled(item, b);
+            }).pad(4);
+        }).growX().pad(2);
         parent.row();
     }
 
@@ -428,18 +442,19 @@ function buildStorageListDialog() {
 
     function addStorageRow(parent, building) {
         const block = building.block;
-        parent.image(iconsUtil.getByName(block.name)).size(32).pad(4);
-        parent.add(block.localizedName + " (" + building.tile.x + ", " + building.tile.y + ")").left().growX().pad(4);
+        parent.table(ROW_BG, row => {
+            row.image(iconsUtil.getByName(block.name)).size(32).pad(4);
+            row.add(block.localizedName + " (" + building.tile.x + ", " + building.tile.y + ")").left().growX().pad(4);
 
-        const configured = storageConfig.countConfigured(building);
-        parent.label(() => configured > 0
-            ? Core.bundle.format("eui.storage.row-summary", configured)
-            : Core.bundle.get("eui.storage.row-empty")).pad(4);
+            const configured = storageConfig.countConfigured(building);
+            row.label(() => configured > 0
+                ? Core.bundle.format("eui.storage.row-summary", configured)
+                : Core.bundle.get("eui.storage.row-empty")).pad(4);
 
-        parent.button(Icon.pencil, Styles.cleari, () => {
-            storageEditDialog.build(building, () => rebuild()).show();
-        }).size(36).pad(4);
-
+            row.button(Icon.pencil, Styles.cleari, () => {
+                storageEditDialog.build(building, () => rebuild()).show();
+            }).size(36).pad(4);
+        }).growX().pad(2);
         parent.row();
     }
 
@@ -510,21 +525,22 @@ function buildTaskPriorityDialog() {
     }
 
     function addTaskRow(parent, task) {
-        parent.add(Core.bundle.get(task.bundleKey)).left().colspan(2).width(360).pad(4);
+        parent.table(ROW_BG, row => {
+            row.add(Core.bundle.get(task.bundleKey)).left().growX().width(360).pad(4);
 
-        const fieldCell = parent.field(taskPriority.get(task.id) + "", text => {
-            const v = parseInt(text);
-            if (!isNaN(v)) taskPriority.set(task.id, Math.max(0, Math.min(999, v)));
-        });
-        fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= 999);
-        fieldCell.width(110).pad(4);
-        const fieldElement = fieldCell.get();
+            const fieldCell = row.field(taskPriority.get(task.id) + "", text => {
+                const v = parseInt(text);
+                if (!isNaN(v)) taskPriority.set(task.id, Math.max(0, Math.min(999, v)));
+            });
+            fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= 999);
+            fieldCell.width(110).pad(4);
+            const fieldElement = fieldCell.get();
 
-        parent.button(Icon.cancel, Styles.cleari, () => {
-            taskPriority.reset(task.id);
-            fieldElement.setText(task.defaultPriority + "");
-        }).size(36).pad(4);
-
+            row.button(Icon.cancel, Styles.cleari, () => {
+                taskPriority.reset(task.id);
+                fieldElement.setText(task.defaultPriority + "");
+            }).size(36).pad(4);
+        }).growX().pad(2);
         parent.row();
     }
 
@@ -541,29 +557,30 @@ function buildTaskPriorityDialog() {
     }
 
     function addBlockRow(parent, block) {
-        parent.image(iconsUtil.getByName(block.name)).size(28).pad(2).padLeft(20);
+        parent.table(ROW_BG, row => {
+            row.image(iconsUtil.getByName(block.name)).size(28).pad(2).padLeft(20);
 
-        parent.check("", consumerConfig.isEnabled(block), v => {
-            consumerConfig.setEnabled(block, v);
-        }).pad(4);
+            row.check("", consumerConfig.isEnabled(block), v => {
+                consumerConfig.setEnabled(block, v);
+            }).pad(4);
 
-        parent.add(block.localizedName).left().growX().pad(4);
+            row.add(block.localizedName).left().growX().pad(4);
 
-        const fieldCell = parent.field(consumerConfig.getPriority(block) + "", text => {
-            const v = parseInt(text);
-            if (!isNaN(v)) consumerConfig.setPriority(block, Math.max(0, Math.min(consumerConfig.MAX_PRIORITY, v)));
-        });
-        fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= consumerConfig.MAX_PRIORITY);
-        fieldCell.width(80).pad(4);
+            const fieldCell = row.field(consumerConfig.getPriority(block) + "", text => {
+                const v = parseInt(text);
+                if (!isNaN(v)) consumerConfig.setPriority(block, Math.max(0, Math.min(consumerConfig.MAX_PRIORITY, v)));
+            });
+            fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= consumerConfig.MAX_PRIORITY);
+            fieldCell.width(80).pad(4);
 
-        if (block instanceof ItemTurret && block.ammoTypes && !block.ammoTypes.isEmpty()) {
-            parent.button(Icon.pencil, Styles.cleari, () => {
-                buildTurretAmmoDialog(block).show();
-            }).size(36).pad(4).tooltip(Core.bundle.get("eui.turret-ammo.button-tooltip"));
-        } else {
-            parent.add().size(36).pad(4);
-        }
-
+            if (block instanceof ItemTurret && block.ammoTypes && !block.ammoTypes.isEmpty()) {
+                row.button(Icon.pencil, Styles.cleari, () => {
+                    buildTurretAmmoDialog(block).show();
+                }).size(36).pad(4).tooltip(Core.bundle.get("eui.turret-ammo.button-tooltip"));
+            } else {
+                row.add().size(36).pad(4);
+            }
+        }).growX().pad(2);
         parent.row();
     }
 
@@ -603,24 +620,25 @@ function buildTurretAmmoDialog(turretBlock) {
     }
 
     function addRow(parent, entry) {
-        parent.image(iconsUtil.getByName(entry.item.name)).size(32).pad(4);
+        parent.table(ROW_BG, row => {
+            row.image(iconsUtil.getByName(entry.item.name)).size(32).pad(4);
 
-        parent.check("", turretAmmoConfig.isEnabled(turretBlock, entry.item), v => {
-            turretAmmoConfig.setEnabled(turretBlock, entry.item, v);
-        }).pad(4);
+            row.check("", turretAmmoConfig.isEnabled(turretBlock, entry.item), v => {
+                turretAmmoConfig.setEnabled(turretBlock, entry.item, v);
+            }).pad(4);
 
-        parent.add(entry.item.localizedName).left().width(160).pad(4);
+            row.add(entry.item.localizedName).left().width(160).pad(4);
 
-        const dmg = entry.bullet.damage + entry.bullet.splashDamage;
-        parent.label(() => Core.bundle.format("eui.turret-ammo.damage", Math.round(dmg))).pad(4);
+            const dmg = entry.bullet.damage + entry.bullet.splashDamage;
+            row.label(() => Core.bundle.format("eui.turret-ammo.damage", Math.round(dmg))).pad(4);
 
-        const fieldCell = parent.field(turretAmmoConfig.getPriority(turretBlock, entry.item) + "", text => {
-            const v = parseInt(text);
-            if (!isNaN(v)) turretAmmoConfig.setPriority(turretBlock, entry.item, Math.max(0, Math.min(turretAmmoConfig.MAX_PRIORITY, v)));
-        });
-        fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= turretAmmoConfig.MAX_PRIORITY);
-        fieldCell.width(80).pad(4);
-
+            const fieldCell = row.field(turretAmmoConfig.getPriority(turretBlock, entry.item) + "", text => {
+                const v = parseInt(text);
+                if (!isNaN(v)) turretAmmoConfig.setPriority(turretBlock, entry.item, Math.max(0, Math.min(turretAmmoConfig.MAX_PRIORITY, v)));
+            });
+            fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= turretAmmoConfig.MAX_PRIORITY);
+            fieldCell.width(80).pad(4);
+        }).growX().pad(2);
         parent.row();
     }
 
