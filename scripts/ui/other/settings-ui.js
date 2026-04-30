@@ -71,32 +71,38 @@ Events.on(EventType.ClientLoadEvent, () => {
             contentTable.checkPref("eui-DragPathfind", false);
         }
 
-        // Sub-dialog buttons live inside the scrollable settings pane so the
-        // whole list scrolls together (no awkward fixed footer below it).
-        contentTable.row();
-        contentTable.button(
-            Core.bundle.get("eui.core-limits.open"),
-            Icon.box,
-            () => coreLimitsDialog.show()
-        ).width(360).height(50).pad(8);
-        contentTable.row();
-        contentTable.button(
-            Core.bundle.get("eui.collect-targets.open"),
-            Icon.box,
-            () => collectTargetsDialog.show()
-        ).width(360).height(50).pad(8);
-        contentTable.row();
-        contentTable.button(
-            Core.bundle.get("eui.storage.open"),
-            Icon.box,
-            () => storageListDialog.show()
-        ).width(360).height(50).pad(8);
-        contentTable.row();
-        contentTable.button(
-            Core.bundle.get("eui.task-priority.open"),
-            Icon.box,
-            () => taskPriorityDialog.show()
-        ).width(360).height(50).pad(8);
+        // Each pref method auto-rebuilds the table (clear + render list +
+        // append the "reset to default" button). Override that final layout
+        // so our sub-dialog buttons sit between the prefs and the reset
+        // button, left-aligned to match the rest of the list.
+        function layoutWithButtons() {
+            contentTable.clearChildren();
+            contentTable.list.each(s => s.add(contentTable));
+
+            const addRow = (labelKey, dialog) => {
+                contentTable.row();
+                contentTable.button(
+                    Core.bundle.get(labelKey),
+                    Icon.box,
+                    () => dialog.show()
+                ).left().width(360).height(50).pad(8);
+            };
+            addRow("eui.core-limits.open", coreLimitsDialog);
+            addRow("eui.collect-targets.open", collectTargetsDialog);
+            addRow("eui.storage.open", storageListDialog);
+            addRow("eui.task-priority.open", taskPriorityDialog);
+
+            // Replicate Mindustry's reset behaviour but place it last so it
+            // really is at the bottom.
+            contentTable.row();
+            contentTable.button(Core.bundle.get("settings.reset", "Reset to defaults"), () => {
+                contentTable.list.each(s => {
+                    if (s.name) Core.settings.remove(s.name);
+                });
+                layoutWithButtons();
+            }).margin(14);
+        }
+        layoutWithButtons();
 
         return contentTable;
     })());
