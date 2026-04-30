@@ -1,7 +1,6 @@
 const storageConfig = require("extended-ui/interact/storage-config");
 const storageFill = require("extended-ui/interact/storage-fill");
 const timer = require("extended-ui/interact/interact-timer");
-const playerBusy = require("extended-ui/interact/player-busy");
 
 let carrying = false;
 
@@ -78,7 +77,6 @@ Events.run(Trigger.update, () => {
         return;
     }
     if (!timer.canInteract()) return;
-    if (playerBusy.isPlayerInteracting()) return;
     const player = Vars.player;
     if (!player) return;
     const unit = player.unit();

@@ -1,7 +1,5 @@
-const SELECT_COOLDOWN_TICKS = 30;
 const DEFAULT_STEERING_COOLDOWN_SEC = 2;
 
-let lastSelectTime = -1e9;
 let lastSteeringTime = -1e9;
 
 function steeringCooldownTicks() {
@@ -10,12 +8,11 @@ function steeringCooldownTicks() {
 }
 
 Events.run(Trigger.update, () => {
-    if (isSelectActive()) {
-        lastSelectTime = Time.time;
-        lastSteeringTime = Time.time;
-        return;
-    }
-    if (isSteeringActive()) {
+    // Both Binding.select (clicking on the world) and active movement
+    // suspend the auto-pilot's steering for the configured cooldown so
+    // the player gets uninterrupted manual control. Inventory transfers
+    // are NOT gated here — the player has the auto-fill toggle for that.
+    if (isSelectActive() || isSteeringActive()) {
         lastSteeringTime = Time.time;
     }
 });
@@ -98,15 +95,12 @@ function isSteeringActive() {
     return false;
 }
 
-// True while/just-after Binding.select is held -- pauses inventory
-// script actions for ~0.5s after release.
-exports.isPlayerInteracting = function() {
-    return Time.time - lastSelectTime < SELECT_COOLDOWN_TICKS;
-}
-
 // True while/just-after the player did anything that would steer the
-// unit. Pauses auto-pilot for the configured cooldown after release so
-// the player gets a clear stretch of manual control.
+// unit (movement keys / mouse-follow / mining / Binding.select click).
+// Pauses auto-pilot for the configured cooldown after release so the
+// player gets a clear stretch of manual control. Inventory transfers
+// are intentionally NOT gated by this — the auto-fill toggle button
+// is the only manual override for those.
 exports.isPlayerSteering = function() {
     return Time.time - lastSteeringTime < steeringCooldownTicks();
 }

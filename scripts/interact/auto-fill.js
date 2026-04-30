@@ -3,7 +3,6 @@ const coreLimits = require("extended-ui/interact/core-limits");
 const storageFill = require("extended-ui/interact/storage-fill");
 const consumerConfig = require("extended-ui/interact/consumer-config");
 const turretAmmoConfig = require("extended-ui/interact/turret-ammo-config");
-const playerBusy = require("extended-ui/interact/player-busy");
 const autoPilot = require("extended-ui/interact/auto-pilot");
 
 // True when the autopilot is steering the drone to a non-core destination.
@@ -20,7 +19,6 @@ function autopilotHeadingNonCore() {
 
 Events.run(Trigger.update, () => {
     if (!Core.settings.getBool("eui-auto-fill", false) || !timer.canInteract()) return;
-    if (playerBusy.isPlayerInteracting()) return;
     const player = Vars.player;
     if (player.unit() == null) return;
     const stack = player.unit().stack;
