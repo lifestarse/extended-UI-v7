@@ -239,6 +239,13 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
     let bestB = null;
     let bestItem = null;
     let bestScore = -1;
+    // requireItem set === top-up mode (drone is already carrying the item).
+    // The pickup-threshold guards the "should the drone visit this producer
+    // from idle?" decision. For a top-up the drone is committed to the item
+    // anyway, so any positive stock is fair game — otherwise a drone that
+    // partial-delivered to a factory parks at the consumer with 3 of an
+    // item because every drill is just under the user's collect threshold.
+    const topUp = requireItem != null;
 
     builds.each(b => {
         try {
@@ -249,7 +256,7 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
                 && block.outputItems != null
                 && collectConfig.isFactoryEnabled(block)) {
                 if (!b.items) return;
-                const thr = collectConfig.getPickupThreshold(block);
+                const thr = topUp ? 1 : collectConfig.getPickupThreshold(block);
                 for (let i = 0; i < block.outputItems.length; i++) {
                     const it = block.outputItems[i].item;
                     if (requireItem && it !== requireItem) continue;
@@ -269,7 +276,7 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
                 if (requireItem && dom !== requireItem) return;
                 if (!collectConfig.isDrillItemEnabled(dom)) return;
                 const stock = b.items.get(dom);
-                const thr = collectConfig.getPickupThreshold(block);
+                const thr = topUp ? 1 : collectConfig.getPickupThreshold(block);
                 if (stock >= thr && stock > bestScore) {
                     bestScore = stock;
                     bestB = b;

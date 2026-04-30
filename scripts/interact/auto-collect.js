@@ -97,6 +97,11 @@ Events.run(Trigger.update, () => {
 });
 
 function findTopUpTarget(team, player, unit, item, factoryEnabled, drillEnabled) {
+    // Top-up reaches here when the drone already carries `item` and is
+    // standing at a same-item producer. The pickup-threshold is a
+    // "should we visit this producer from idle?" gate, irrelevant for an
+    // in-flight top-up — any positive stock is usable, otherwise the
+    // drone freezes at a near-empty drill with a partial inventory.
     let target = null;
     Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, b => {
         if (target) return;
@@ -105,7 +110,7 @@ function findTopUpTarget(team, player, unit, item, factoryEnabled, drillEnabled)
             && block.outputItems && b.items) {
             for (let i = 0; i < block.outputItems.length; i++) {
                 if (block.outputItems[i].item !== item) continue;
-                if (b.items.get(item) >= collectConfig.getPickupThreshold(block)) {
+                if (b.items.get(item) > 0) {
                     target = b;
                     return;
                 }
@@ -114,7 +119,7 @@ function findTopUpTarget(team, player, unit, item, factoryEnabled, drillEnabled)
         if (!target && drillEnabled && block instanceof Drill && b.items
             && b.dominantItem === item
             && collectConfig.isDrillItemEnabled(item)
-            && b.items.get(item) >= collectConfig.getPickupThreshold(block)) {
+            && b.items.get(item) > 0) {
             target = b;
         }
     });
