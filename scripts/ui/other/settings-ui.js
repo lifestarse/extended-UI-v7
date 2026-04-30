@@ -71,77 +71,32 @@ Events.on(EventType.ClientLoadEvent, () => {
             contentTable.checkPref("eui-DragPathfind", false);
         }
 
-        // Wipe every "eui-" / "eui." key from Core.settings -- covers both
-        // SettingsTable-registered prefs and all the prefix-keyed extras
-        // (per-item core limits, per-storage thresholds and drain flags,
-        // consumer/turret/task priorities, auto-collect filters, etc.).
-        function clearEuiSettings() {
+        // Register sub-dialog buttons as proper Settings via pref() so the
+        // SettingsTable's auto-rebuild slots them in BEFORE the trailing
+        // "reset to defaults" button. Falls back to a plain .button() append
+        // if the Setting subclass can't be created on this Mindustry build.
+        function pushButton(labelKey, dialog) {
             try {
-                const valuesMap = Core.settings.values;
-                if (!valuesMap) return;
-                const keysToRemove = [];
-                valuesMap.orderedKeys().each(k => {
-                    if (k.indexOf("eui-") === 0 || k.indexOf("eui.") === 0) {
-                        keysToRemove.push(k);
+                const Setting = SettingsMenuDialog.SettingsTable.Setting;
+                const setting = new JavaAdapter(Setting, {
+                    add: function(table) {
+                        table.row();
+                        table.button(Core.bundle.get(labelKey), Icon.box, () => dialog.show())
+                            .width(360).height(50).pad(8);
+                        table.row();
                     }
-                });
-                for (let i = 0; i < keysToRemove.length; i++) {
-                    Core.settings.remove(keysToRemove[i]);
-                }
+                }, "eui-btn-" + labelKey.replace(/\./g, "-"));
+                contentTable.pref(setting);
             } catch (e) {
-                log("eui clear: " + e);
+                contentTable.row();
+                contentTable.button(Core.bundle.get(labelKey), Icon.box, () => dialog.show())
+                    .width(360).height(50).pad(8);
             }
         }
-
-        // Each pref method auto-appends a "reset to defaults" button at the
-        // end of the table. Hide it (size 0 + invisible) so we can place our
-        // own reset at the very bottom of the pane, after the sub-dialog
-        // buttons.
-        function hideAutoReset() {
-            try {
-                const cells = contentTable.getCells();
-                if (cells && cells.size > 0) {
-                    const last = cells.peek();
-                    const elem = last.get();
-                    if (elem) elem.visible = false;
-                    last.size(0, 0).pad(0).space(0);
-                }
-            } catch (e) {
-                log("eui hide reset: " + e);
-            }
-        }
-
-        function addExtraButtons() {
-            contentTable.row();
-            contentTable.button(Core.bundle.get("eui.core-limits.open"), Icon.box, () => coreLimitsDialog.show()).width(360).height(50).pad(8);
-            contentTable.row();
-            contentTable.button(Core.bundle.get("eui.collect-targets.open"), Icon.box, () => collectTargetsDialog.show()).width(360).height(50).pad(8);
-            contentTable.row();
-            contentTable.button(Core.bundle.get("eui.storage.open"), Icon.box, () => storageListDialog.show()).width(360).height(50).pad(8);
-            contentTable.row();
-            contentTable.button(Core.bundle.get("eui.task-priority.open"), Icon.box, () => taskPriorityDialog.show()).width(360).height(50).pad(8);
-        }
-
-        // Our own reset button at the very bottom. Plain Arc button() so the
-        // click handler is wired by Arc itself (no custom listener juggling).
-        // Width/height match the sub-dialog buttons so the label fits on one
-        // line; a confirm dialog mirrors Mindustry's built-in reset behaviour.
-        function addCustomReset() {
-            contentTable.row();
-            contentTable.button(Core.bundle.get("settings.reset"), () => {
-                Vars.ui.showConfirm("@confirm", "@settings.reset.confirm", () => {
-                    clearEuiSettings();
-                    try { contentTable.rebuild(); } catch (e) {}
-                    hideAutoReset();
-                    addExtraButtons();
-                    addCustomReset();
-                });
-            }).width(360).height(50).pad(8);
-        }
-
-        hideAutoReset();
-        addExtraButtons();
-        addCustomReset();
+        pushButton("eui.core-limits.open", coreLimitsDialog);
+        pushButton("eui.collect-targets.open", collectTargetsDialog);
+        pushButton("eui.storage.open", storageListDialog);
+        pushButton("eui.task-priority.open", taskPriorityDialog);
 
         return contentTable;
     })());
