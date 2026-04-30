@@ -124,15 +124,19 @@ Events.on(EventType.ClientLoadEvent, () => {
 
         // Our own reset button at the very bottom. Plain Arc button() so the
         // click handler is wired by Arc itself (no custom listener juggling).
+        // Width/height match the sub-dialog buttons so the label fits on one
+        // line; a confirm dialog mirrors Mindustry's built-in reset behaviour.
         function addCustomReset() {
             contentTable.row();
             contentTable.button(Core.bundle.get("settings.reset"), () => {
-                clearEuiSettings();
-                try { contentTable.rebuild(); } catch (e) {}
-                hideAutoReset();
-                addExtraButtons();
-                addCustomReset();
-            }).margin(14);
+                Vars.ui.showConfirm("@confirm", "@settings.reset.confirm", () => {
+                    clearEuiSettings();
+                    try { contentTable.rebuild(); } catch (e) {}
+                    hideAutoReset();
+                    addExtraButtons();
+                    addCustomReset();
+                });
+            }).width(360).height(50).pad(8);
         }
 
         hideAutoReset();
