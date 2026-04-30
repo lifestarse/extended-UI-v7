@@ -8,36 +8,88 @@ const taskPriority = require("extended-ui/interact/task-priority");
 const storageEditDialog = require("extended-ui/ui/dialogs/storage-edit-dialog");
 const iconsUtil = require("extended-ui/utils/icons");
 
-// Wipe every Core.settings key that starts with any of the given prefixes.
-function removeKeysByPrefix(prefixes) {
+// === Per-sub-dialog reset helpers ============================================
+// Each one removes only the prefix-keyed Core.settings entries that its own
+// dialog owns. We enumerate keys directly from Vars.content (items, blocks,
+// team buildings, task list) instead of walking Core.settings.values, because
+// the values map's key iterator (orderedKeys/keys) doesn't behave reliably
+// from Rhino in this Mindustry build — that's why earlier prefix-sweep
+// attempts looked like the reset button "did nothing".
+
+function resetCoreLimitsSettings() {
+    Vars.content.items().each(item => coreLimits.resetLimit(item));
+}
+
+function resetCollectTargetsSettings() {
+    Vars.content.blocks().each(block => {
+        Core.settings.remove("eui-collect-factory-" + block.name);
+    });
+    Vars.content.items().each(item => {
+        Core.settings.remove("eui-collect-drill-" + item.name);
+    });
+}
+
+function resetStorageSettings() {
+    // Sweep currently-owned storages by their tile coords. Keys for
+    // destroyed storages are inert (no building -> no UI -> no behaviour),
+    // so leaving them is acceptable.
     try {
-        const valuesMap = Core.settings.values;
-        if (!valuesMap) return;
-        const keysToRemove = [];
-        valuesMap.orderedKeys().each(k => {
-            for (let i = 0; i < prefixes.length; i++) {
-                if (k.indexOf(prefixes[i]) === 0) {
-                    keysToRemove.push(k);
-                    return;
-                }
-            }
+        const team = Vars.player ? Vars.player.team() : null;
+        const data = team ? team.data() : null;
+        const builds = data ? data.buildings : null;
+        if (!builds) return;
+        builds.each(b => {
+            try {
+                if (!storageFill.isManagedStorage(b.block)) return;
+                Vars.content.items().each(item => {
+                    Core.settings.remove("eui-storage-fill-" + b.tile.x + "_" + b.tile.y + "-" + item.name);
+                    Core.settings.remove("eui-storage-drain-" + b.tile.x + "_" + b.tile.y + "-" + item.name);
+                });
+            } catch (e) {}
         });
-        for (let i = 0; i < keysToRemove.length; i++) {
-            Core.settings.remove(keysToRemove[i]);
-        }
     } catch (e) {
-        log("eui prefix clear: " + e);
+        log("eui reset storage: " + e);
     }
 }
 
-// Standard "Сбросить по умолчанию" button for sub-dialogs — same labels and
-// confirm flow as Mindustry's built-in settings reset. Each caller supplies
-// the per-dialog reset action (which clears its own settings and rebuilds).
+function resetTaskPrioritySettings() {
+    for (let i = 0; i < taskPriority.TASKS.length; i++) {
+        taskPriority.reset(taskPriority.TASKS[i].id);
+    }
+    for (let i = 0; i < consumerConfig.CATEGORIES.length; i++) {
+        Core.settings.remove("eui-consumer-cat-expanded-" + consumerConfig.CATEGORIES[i]);
+    }
+    Vars.content.blocks().each(block => {
+        Core.settings.remove("eui-consumer-enabled-" + block.name);
+        Core.settings.remove("eui-consumer-priority-" + block.name);
+        Core.settings.remove("eui-turret-priority-" + block.name);
+        try {
+            if (block instanceof ItemTurret && block.ammoTypes) {
+                block.ammoTypes.each((item, bullet) => {
+                    Core.settings.remove("eui-turret-ammo-enabled-" + block.name + "-" + item.name);
+                    Core.settings.remove("eui-turret-ammo-priority-" + block.name + "-" + item.name);
+                });
+            }
+        } catch (e) {}
+    });
+}
+
+function resetAllSubDialogSettings() {
+    try { resetCoreLimitsSettings(); } catch (e) { log("eui reset core-limits: " + e); }
+    try { resetCollectTargetsSettings(); } catch (e) { log("eui reset collect: " + e); }
+    try { resetStorageSettings(); } catch (e) { log("eui reset storage: " + e); }
+    try { resetTaskPrioritySettings(); } catch (e) { log("eui reset task-priority: " + e); }
+}
+
+// Standard "Сбросить по умолчанию" button for sub-dialogs. Uses the mod's
+// own confirm-text bundle key — Mindustry's "settings.reset.confirm" key
+// resolves fine for the engine's native showConfirm but comes back as
+// "???settings.reset.confirm???" through Core.bundle.get from Rhino.
 function addStandardReset(dialog, doReset) {
     dialog.buttons.button(Core.bundle.get("settings.reset"), () => {
         Vars.ui.showConfirm(
             Core.bundle.get("confirm"),
-            Core.bundle.get("settings.reset.confirm"),
+            Core.bundle.get("eui.reset-confirm"),
             doReset
         );
     }).size(240, 60);
@@ -106,6 +158,31 @@ Events.on(EventType.ClientLoadEvent, () => {
             contentTable.checkPref("eui-DragPathfind", false);
         }
 
+        // Hook into Mindustry's built-in "Сбросить по умолчанию": register
+        // an invisible Setting whose changed Runnable fires inside the reset
+        // loop and clears every sub-dialog config (per-item core limits,
+        // collect targets, storage fills/drains, task/consumer/turret-ammo
+        // priorities). Setting.changed is a Java Runnable field — Rhino
+        // does NOT auto-convert a JS function on field assignment, so wrap
+        // explicitly via JavaAdapter.
+        try {
+            const HookSetting = SettingsMenuDialog.SettingsTable.Setting;
+            const HOOK_KEY = "eui-reset-hook";
+            // Make sure has(HOOK_KEY) is true so the reset loop walks our
+            // Setting (some Mindustry builds gate the changed.run() call on
+            // settings.has()).
+            Core.settings.put(HOOK_KEY, true);
+            const hook = new JavaAdapter(HookSetting, {
+                add: function(table) {} // no UI — hook only
+            }, HOOK_KEY);
+            hook.changed = new JavaAdapter(java.lang.Runnable, {
+                run: function() { resetAllSubDialogSettings(); }
+            });
+            contentTable.pref(hook);
+        } catch (e) {
+            log("eui main-reset hook: " + e);
+        }
+
         // Register sub-dialog buttons as proper Settings via pref() so the
         // SettingsTable's auto-rebuild slots them in BEFORE the trailing
         // "reset to defaults" button. Falls back to a plain .button() append
@@ -147,7 +224,7 @@ function buildCoreLimitsDialog() {
     const dialog = new BaseDialog(Core.bundle.get("eui.core-limits.title"));
     dialog.addCloseButton();
     addStandardReset(dialog, () => {
-        Vars.content.items().each(item => coreLimits.resetLimit(item));
+        resetCoreLimitsSettings();
         rebuild();
     });
 
@@ -202,7 +279,7 @@ function buildCollectTargetsDialog() {
     const dialog = new BaseDialog(Core.bundle.get("eui.collect-targets.title"));
     dialog.addCloseButton();
     addStandardReset(dialog, () => {
-        removeKeysByPrefix(["eui-collect-factory-", "eui-collect-drill-"]);
+        resetCollectTargetsSettings();
         rebuild();
     });
 
@@ -275,7 +352,7 @@ function buildStorageListDialog() {
     const dialog = new BaseDialog(Core.bundle.get("eui.storage.title"));
     dialog.addCloseButton();
     addStandardReset(dialog, () => {
-        removeKeysByPrefix(["eui-storage-fill-", "eui-storage-drain-"]);
+        resetStorageSettings();
         rebuild();
     });
 
@@ -338,20 +415,8 @@ function buildTaskPriorityDialog() {
 
     let listTable = null;
 
-    // This dialog edits task priorities AND consumer enable/priority AND
-    // turret-ammo per-pair settings (via the nested edit dialog), so the
-    // reset clears all three trees plus the legacy turret-priority prefix
-    // that consumer-config still falls back to for migration.
     addStandardReset(dialog, () => {
-        removeKeysByPrefix([
-            "eui-task-priority-",
-            "eui-consumer-enabled-",
-            "eui-consumer-priority-",
-            "eui-consumer-cat-expanded-",
-            "eui-turret-priority-",
-            "eui-turret-ammo-enabled-",
-            "eui-turret-ammo-priority-"
-        ]);
+        resetTaskPrioritySettings();
         rebuild();
     });
 
