@@ -71,13 +71,28 @@ Events.on(EventType.ClientLoadEvent, () => {
             contentTable.checkPref("eui-DragPathfind", false);
         }
 
-        // The built-in "reset to defaults" button only knows about settings
-        // registered via checkPref/sliderPref. All our per-item / per-block /
-        // per-storage configs (core limits, storage thresholds, drain flags,
-        // consumer/turret/task priorities, etc.) are stored as separate
-        // prefix-keyed entries -- wipe those too via a Setting.changed hook
-        // that fires from inside the auto-reset loop.
-        const clearModExtras = () => {
+        // Add the four sub-dialog buttons directly after the prefs. They land
+        // after the auto-appended "reset to defaults" button -- that's fine,
+        // we hook the reset's click below so it does the right thing.
+        function addExtraButtons() {
+            contentTable.row();
+            contentTable.button(Core.bundle.get("eui.core-limits.open"), Icon.box, () => coreLimitsDialog.show()).width(360).height(50).pad(8);
+            contentTable.row();
+            contentTable.button(Core.bundle.get("eui.collect-targets.open"), Icon.box, () => collectTargetsDialog.show()).width(360).height(50).pad(8);
+            contentTable.row();
+            contentTable.button(Core.bundle.get("eui.storage.open"), Icon.box, () => storageListDialog.show()).width(360).height(50).pad(8);
+            contentTable.row();
+            contentTable.button(Core.bundle.get("eui.task-priority.open"), Icon.box, () => taskPriorityDialog.show()).width(360).height(50).pad(8);
+        }
+        addExtraButtons();
+
+        // Mindustry's built-in reset only resets settings registered via
+        // checkPref/sliderPref. Our mod also stores tons of prefix-keyed
+        // configs (per-item core limits, per-storage thresholds and drain
+        // flags, consumer/turret/task priorities, auto-collect filters,
+        // etc.). Replace the reset button's click handler so it wipes every
+        // "eui-" / "eui." setting and rebuilds the table.
+        function clearEuiSettings() {
             try {
                 const valuesMap = Core.settings.values;
                 if (!valuesMap) return;
@@ -91,39 +106,45 @@ Events.on(EventType.ClientLoadEvent, () => {
                     Core.settings.remove(keysToRemove[i]);
                 }
             } catch (e) {
-                log("eui reset cleanup: " + e);
-            }
-        };
-
-        // Register sub-dialog buttons as proper Settings via pref() so the
-        // SettingsTable's auto-rebuild slots them in BEFORE the trailing
-        // "reset to defaults" button. Falls back to a plain .button() append
-        // if the Setting subclass can't be created on this Mindustry build.
-        function pushButton(labelKey, dialog, onReset) {
-            try {
-                const settingName = "eui-btn-" + labelKey.replace(/\./g, "-");
-                Core.settings.defaults(settingName, false);
-                const Setting = SettingsMenuDialog.SettingsTable.Setting;
-                const setting = new JavaAdapter(Setting, {
-                    add: function(table) {
-                        table.row();
-                        table.button(Core.bundle.get(labelKey), Icon.box, () => dialog.show())
-                            .width(360).height(50).pad(8);
-                        table.row();
-                    }
-                }, settingName);
-                if (onReset) setting.changed = onReset;
-                contentTable.pref(setting);
-            } catch (e) {
-                contentTable.row();
-                contentTable.button(Core.bundle.get(labelKey), Icon.box, () => dialog.show())
-                    .width(360).height(50).pad(8);
+                log("eui clear: " + e);
             }
         }
-        pushButton("eui.core-limits.open", coreLimitsDialog, clearModExtras);
-        pushButton("eui.collect-targets.open", collectTargetsDialog);
-        pushButton("eui.storage.open", storageListDialog);
-        pushButton("eui.task-priority.open", taskPriorityDialog);
+
+        function findResetButton() {
+            try {
+                const cells = contentTable.getCells();
+                if (!cells) return null;
+                const resetText = Core.bundle.get("settings.reset");
+                if (!resetText) return null;
+                for (let i = 0; i < cells.size; i++) {
+                    const cell = cells.get(i);
+                    const elem = cell.get();
+                    if (!elem || !elem.getText) continue;
+                    try {
+                        const t = elem.getText();
+                        if (t && t.toString().equals(resetText)) return elem;
+                    } catch (e) {}
+                }
+            } catch (e) {}
+            return null;
+        }
+
+        function wrapResetButton() {
+            try {
+                const btn = findResetButton();
+                if (!btn) return;
+                btn.clearListeners();
+                btn.clicked(() => {
+                    clearEuiSettings();
+                    try { contentTable.rebuild(); } catch (e) {}
+                    addExtraButtons();
+                    wrapResetButton();
+                });
+            } catch (e) {
+                log("eui wrap reset: " + e);
+            }
+        }
+        wrapResetButton();
 
         return contentTable;
     })());
