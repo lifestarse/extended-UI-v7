@@ -35,15 +35,22 @@ Events.run(Trigger.update, () => {
     const turretsOn = Core.settings.getBool("eui-auto-fill-turrets", true);
     const minAmount = consumerConfig.getMinAmount();
     const probeAmount = Math.max(20, minAmount);
-    // When autopilot is steering, pickTarget already vetted the trip — its
-    // findBestConsumer probes the consumer's *capacity* with minAmount, not
-    // the drone's stack. So the drone may legitimately arrive holding fewer
-    // than minAmount items (e.g. partial leftover after a previous delivery
-    // when the same-item producer was below the collect threshold). Refusing
-    // to deliver here parks the drone at the consumer holding 3 of an item
-    // it could just hand over.
+    // Two competing concerns when autopilot is steering:
+    //   1) A leftover stack smaller than minAmount must still be deliverable,
+    //      otherwise the drone parks at the consumer holding 3 items it
+    //      could just hand over.
+    //   2) A full stack must NOT be drip-fed one item at a time as the
+    //      consumer chews through it — otherwise the drone gets stuck
+    //      topping up the same factory every tick (factory: 10/10 -> 9/10
+    //      -> drone delivers 1 -> 10/10 -> ...) and the rest of the line
+    //      starves.
+    // Resolve both by gating on the drone's own stack size: big stack
+    // requires the normal minAmount batch, small stack accepts any unit.
+    // (Manual play keeps the minAmount filter throughout.)
     const autopilotOn = Core.settings.getBool("eui-auto-pilot", false);
-    const deliverThreshold = autopilotOn ? 1 : minAmount;
+    const deliverThreshold = autopilotOn
+        ? (stack.amount >= minAmount ? minAmount : 1)
+        : minAmount;
 
     Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, b => {
         if (!timer.canInteract()) return;
