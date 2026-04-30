@@ -32,54 +32,75 @@ Events.on(EventType.ClientLoadEvent, () => {
             contentTable = new SettingsMenuDialog.SettingsTable();
         }
 
-        contentTable.checkPref("eui-showPowerBar", true);
-        contentTable.checkPref("eui-showFactoryProgress", true);
-        contentTable.checkPref("eui-showUnitBar", true);
-        contentTable.checkPref("eui-ShowUnitTable", true);
-        contentTable.checkPref("eui-ShowBlockInfo", true);
-        contentTable.checkPref("eui-ShowAlerts", true);
-        contentTable.checkPref("eui-ShowAlertsBottom", false);
-        contentTable.checkPref("eui-ShowResourceRate", false);
-        contentTable.checkPref("eui-ShowSchematicsTable", true);
-        contentTable.checkPref("eui-ShowSchematicsPreview", true);
-        contentTable.sliderPref("eui-SchematicsTableRows", 4, 2, 20, 1, i => i);
-        contentTable.sliderPref("eui-SchematicsTableColumns", 5, 4, 16, 1, i => i);
-        contentTable.sliderPref("eui-SchematicsTableButtonSize", 30, 20, 80, 2, i => i);
-        contentTable.checkPref("eui-ShowEfficiency", false);
-        contentTable.sliderPref("eui-EfficiencyTimer", 15, 10, 180, 5, i => i);
-        contentTable.checkPref("eui-TrackPlayerCursor", false);
-        contentTable.sliderPref("eui-playerCursorStyle", 7, 1, 7, 1, i => i);
-        contentTable.checkPref("eui-ShowOwnCursor", false);
-        contentTable.checkPref("eui-TrackLogicControl", false);
-        contentTable.sliderPref("eui-maxZoom", 10, 1, 10, 1, i => i);
-        contentTable.checkPref("eui-makeMineble", false);
-        contentTable.checkPref("eui-showInteractSettings", true);
-        contentTable.sliderPref("eui-core-limit-global", coreLimits.DEFAULT_LIMIT, 0, 1000, 10, i => i);
-        contentTable.checkPref("eui-auto-collect-factory", false);
-        contentTable.checkPref("eui-auto-collect-drill", false);
-        contentTable.sliderPref("eui-collect-threshold", 50, 0, 100, 5, i => i + " %");
-        contentTable.checkPref("eui-storage-fill", false);
-        contentTable.checkPref("eui-storage-click-ui", true);
-        contentTable.checkPref("eui-storage-hover-ui", true);
-        contentTable.checkPref("eui-auto-fill-turrets", true);
-        contentTable.sliderPref("eui-auto-fill-min-amount", consumerConfig.DEFAULT_MIN_AMOUNT, 1, 50, 1, i => i);
-        contentTable.checkPref("eui-auto-pilot", false);
-        contentTable.sliderPref("eui-steering-cooldown-sec", 2, 0, 10, 1, i => i + " s");
-        contentTable.sliderPref("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
+        // SettingsTable's `list` field isn't accessible in every Mindustry
+        // build, so we record pref names ourselves to power our own reset.
+        const prefNames = [];
+        const check = (name, def) => {
+            prefNames.push(name);
+            contentTable.checkPref(name, def);
+        };
+        const slider = (name, def, min, max, step, fmt) => {
+            prefNames.push(name);
+            contentTable.sliderPref(name, def, min, max, step, fmt);
+        };
+
+        check("eui-showPowerBar", true);
+        check("eui-showFactoryProgress", true);
+        check("eui-showUnitBar", true);
+        check("eui-ShowUnitTable", true);
+        check("eui-ShowBlockInfo", true);
+        check("eui-ShowAlerts", true);
+        check("eui-ShowAlertsBottom", false);
+        check("eui-ShowResourceRate", false);
+        check("eui-ShowSchematicsTable", true);
+        check("eui-ShowSchematicsPreview", true);
+        slider("eui-SchematicsTableRows", 4, 2, 20, 1, i => i);
+        slider("eui-SchematicsTableColumns", 5, 4, 16, 1, i => i);
+        slider("eui-SchematicsTableButtonSize", 30, 20, 80, 2, i => i);
+        check("eui-ShowEfficiency", false);
+        slider("eui-EfficiencyTimer", 15, 10, 180, 5, i => i);
+        check("eui-TrackPlayerCursor", false);
+        slider("eui-playerCursorStyle", 7, 1, 7, 1, i => i);
+        check("eui-ShowOwnCursor", false);
+        check("eui-TrackLogicControl", false);
+        slider("eui-maxZoom", 10, 1, 10, 1, i => i);
+        check("eui-makeMineble", false);
+        check("eui-showInteractSettings", true);
+        slider("eui-core-limit-global", coreLimits.DEFAULT_LIMIT, 0, 1000, 10, i => i);
+        check("eui-auto-collect-factory", false);
+        check("eui-auto-collect-drill", false);
+        slider("eui-collect-threshold", 50, 0, 100, 5, i => i + " %");
+        check("eui-storage-fill", false);
+        check("eui-storage-click-ui", true);
+        check("eui-storage-hover-ui", true);
+        check("eui-auto-fill-turrets", true);
+        slider("eui-auto-fill-min-amount", consumerConfig.DEFAULT_MIN_AMOUNT, 1, 50, 1, i => i);
+        check("eui-auto-pilot", false);
+        slider("eui-steering-cooldown-sec", 2, 0, 10, 1, i => i + " s");
+        slider("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
         if (!Vars.mobile) {
-            contentTable.checkPref("eui-DragBlock", false);
-            contentTable.checkPref("eui-DragPathfind", false);
+            check("eui-DragBlock", false);
+            check("eui-DragPathfind", false);
         }
 
-        // Each pref method auto-rebuilds the table (clear + render list +
-        // append the "reset to default" button). Override that final layout
-        // so our sub-dialog buttons sit between the prefs and the reset
-        // button, left-aligned to match the rest of the list.
-        function layoutWithButtons() {
-            contentTable.clearChildren();
-            contentTable.list.each(s => s.add(contentTable));
+        // Every checkPref/sliderPref call auto-appends a "reset to default"
+        // button at the end of the table. Hide that auto-button so we can
+        // place our sub-dialog buttons before reset, with our own reset at
+        // the very bottom.
+        function hideAutoReset() {
+            try {
+                const cells = contentTable.getCells();
+                if (cells && cells.size > 0) {
+                    const last = cells.get(cells.size - 1);
+                    const elem = last.get();
+                    if (elem) elem.visible = false;
+                    last.size(0, 0).pad(0).space(0);
+                }
+            } catch (e) {}
+        }
 
-            const addRow = (labelKey, dialog) => {
+        function appendExtras() {
+            const button = (labelKey, dialog) => {
                 contentTable.row();
                 contentTable.button(
                     Core.bundle.get(labelKey),
@@ -87,22 +108,24 @@ Events.on(EventType.ClientLoadEvent, () => {
                     () => dialog.show()
                 ).left().width(360).height(50).pad(8);
             };
-            addRow("eui.core-limits.open", coreLimitsDialog);
-            addRow("eui.collect-targets.open", collectTargetsDialog);
-            addRow("eui.storage.open", storageListDialog);
-            addRow("eui.task-priority.open", taskPriorityDialog);
+            button("eui.core-limits.open", coreLimitsDialog);
+            button("eui.collect-targets.open", collectTargetsDialog);
+            button("eui.storage.open", storageListDialog);
+            button("eui.task-priority.open", taskPriorityDialog);
 
-            // Replicate Mindustry's reset behaviour but place it last so it
-            // really is at the bottom.
             contentTable.row();
-            contentTable.button(Core.bundle.get("settings.reset", "Reset to defaults"), () => {
-                contentTable.list.each(s => {
-                    if (s.name) Core.settings.remove(s.name);
-                });
-                layoutWithButtons();
+            contentTable.button(Core.bundle.get("settings.reset"), () => {
+                for (let i = 0; i < prefNames.length; i++) {
+                    Core.settings.remove(prefNames[i]);
+                }
+                try { contentTable.rebuild(); } catch (e) {}
+                hideAutoReset();
+                appendExtras();
             }).margin(14);
         }
-        layoutWithButtons();
+
+        hideAutoReset();
+        appendExtras();
 
         return contentTable;
     })());
