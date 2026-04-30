@@ -107,13 +107,13 @@ function findTopUpTarget(team, player, unit, item, factoryEnabled, drillEnabled)
     // is on offer.
     let target = null;
     const stack = unit.stack;
-    const minAmount = consumerConfig.getMinAmount();
-    const factoryThr = stack.amount >= minAmount ? minAmount : 1;
     Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, b => {
         if (target) return;
         const block = b.tile.block();
         if (factoryEnabled && block instanceof GenericCrafter && collectConfig.isFactoryEnabled(block)
             && block.outputItems && b.items) {
+            const blockMin = consumerConfig.getMinAmountFor(block);
+            const factoryThr = stack.amount >= blockMin ? blockMin : 1;
             for (let i = 0; i < block.outputItems.length; i++) {
                 if (block.outputItems[i].item !== item) continue;
                 if (b.items.get(item) >= factoryThr) {

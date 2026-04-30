@@ -75,14 +75,15 @@ function isStale(target, unit) {
             return false;
         }
         if (!target.b.items) return true;
-        const minAmount = consumerConfig.getMinAmount();
-        const thr = stack.amount >= minAmount ? minAmount : 1;
+        const blockMin = consumerConfig.getMinAmountFor(target.b.block);
+        const thr = stack.amount >= blockMin ? blockMin : 1;
         return target.b.items.get(target.item) < thr;
     }
     if (stack.amount > 0 && stack.item) {
         if (!target.expectsConsumer) return true;
         if (target.item !== stack.item) return true;
-        return target.b.acceptStack(stack.item, 5, unit) < 5;
+        const blockMin = consumerConfig.getMinAmountFor(target.b.block);
+        return target.b.acceptStack(stack.item, blockMin, unit) < blockMin;
     }
     if (target.expectsConsumer) return true;
     return !target.b.items || target.b.items.get(target.item) <= 0;
@@ -222,7 +223,6 @@ function findBestConsumer(unit, item, team) {
     if (!builds) return null;
     let bestB = null;
     let bestStock = Infinity;
-    const minAmount = consumerConfig.getMinAmount();
 
     builds.each(b => {
         try {
@@ -231,7 +231,11 @@ function findBestConsumer(unit, item, team) {
             const wantsItem = block.consumers.find(c =>
                 c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);
             if (!wantsItem) return;
-            if (b.acceptStack(item, minAmount, unit) < minAmount) return;
+            // Per-block batch threshold: scales with the consumer's own
+            // capacity so a 10-cap factory and a 100-cap one share the
+            // same fill-percent slider without one of them falling off.
+            const blockMin = consumerConfig.getMinAmountFor(block);
+            if (b.acceptStack(item, blockMin, unit) < blockMin) return;
 
             const stock = b.items ? b.items.get(item) : 0;
             if (stock < bestStock) {
@@ -259,14 +263,11 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
     // item because every drill is just under the user's collect threshold.
     const topUp = requireItem != null;
     const stack = unit.stack;
-    const minAmount = consumerConfig.getMinAmount();
-    // Mirror of the auto-fill drip-feed guard. With a substantial stack the
-    // drone shouldn't pick a slow factory that only has 2 silicon — that
-    // strands it pulling 2 every regen cycle while other factories hit cap
-    // and stall. Small leftover stacks still take any positive stock so the
-    // drone doesn't get stuck holding 3 of an item.
-    const substantialStack = topUp && stack.amount >= minAmount;
-    const factoryTopUpThr = substantialStack ? minAmount : 1;
+    // Mirror of the auto-fill drip-feed guard. Per-block batch size
+    // scales with each producer's capacity (same fill-pct slider as
+    // findBestConsumer / auto-fill). With a substantial stack the drone
+    // skips slow producers; with a small leftover any positive stock is
+    // taken so the drone doesn't get stranded.
 
     builds.each(b => {
         try {
@@ -277,6 +278,8 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
                 && block.outputItems != null
                 && collectConfig.isFactoryEnabled(block)) {
                 if (!b.items) return;
+                const blockMin = consumerConfig.getMinAmountFor(block);
+                const factoryTopUpThr = stack.amount >= blockMin ? blockMin : 1;
                 const thr = topUp ? factoryTopUpThr : collectConfig.getPickupThreshold(block);
                 for (let i = 0; i < block.outputItems.length; i++) {
                     const it = block.outputItems[i].item;

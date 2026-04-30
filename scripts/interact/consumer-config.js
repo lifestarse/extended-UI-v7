@@ -3,16 +3,32 @@ const PRIORITY_PREFIX = "eui-consumer-priority-";
 const EXPANDED_PREFIX = "eui-consumer-cat-expanded-";
 const LEGACY_TURRET_PRIORITY_PREFIX = "eui-turret-priority-";
 const MAX_PRIORITY = 999;
-const MIN_AMOUNT_KEY = "eui-auto-fill-min-amount";
-const DEFAULT_MIN_AMOUNT = 5;
+const FILL_PCT_KEY = "eui-consumer-fill-pct";
+const DEFAULT_FILL_PCT = 50;
 
 exports.MAX_PRIORITY = MAX_PRIORITY;
-exports.DEFAULT_MIN_AMOUNT = DEFAULT_MIN_AMOUNT;
+exports.DEFAULT_FILL_PCT = DEFAULT_FILL_PCT;
 exports.CATEGORIES = ["turrets", "crafters", "unit-factories", "generators", "other"];
 
-exports.getMinAmount = function() {
-    const v = Core.settings.getInt(MIN_AMOUNT_KEY, DEFAULT_MIN_AMOUNT);
-    return v > 0 ? v : DEFAULT_MIN_AMOUNT;
+// Returns the configured fill threshold as a percentage of consumer
+// capacity (0-100). The auto-pilot uses it to derive a per-block batch
+// size: a 10-cap factory and a 100-cap one share one slider that scales
+// to each, so the same setting works whether you have small or large
+// consumers in the line.
+exports.getFillPct = function() {
+    const v = Core.settings.getInt(FILL_PCT_KEY, DEFAULT_FILL_PCT);
+    if (v <= 0) return 1;
+    if (v > 100) return 100;
+    return v;
+}
+
+// Per-block batch size derived from the fill-pct slider.
+// floor(cap * pct / 100), clamped to a minimum of 1 so blocks with tiny
+// capacity (or unknown cap) still get a workable threshold.
+exports.getMinAmountFor = function(block) {
+    const cap = (block && block.itemCapacity) || 0;
+    if (cap <= 0) return 1;
+    return Math.max(1, Math.floor(cap * exports.getFillPct() / 100));
 }
 
 exports.isEnabled = function(block) {

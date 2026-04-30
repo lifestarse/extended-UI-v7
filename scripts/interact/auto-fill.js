@@ -33,24 +33,13 @@ Events.run(Trigger.update, () => {
     let config = Core.settings.getJson("eui.autofill.priority", ObjectMap, () => new ObjectMap());
 
     const turretsOn = Core.settings.getBool("eui-auto-fill-turrets", true);
-    const minAmount = consumerConfig.getMinAmount();
-    const probeAmount = Math.max(20, minAmount);
-    // Two competing concerns when autopilot is steering:
-    //   1) A leftover stack smaller than minAmount must still be deliverable,
-    //      otherwise the drone parks at the consumer holding 3 items it
-    //      could just hand over.
-    //   2) A full stack must NOT be drip-fed one item at a time as the
-    //      consumer chews through it — otherwise the drone gets stuck
-    //      topping up the same factory every tick (factory: 10/10 -> 9/10
-    //      -> drone delivers 1 -> 10/10 -> ...) and the rest of the line
-    //      starves.
-    // Resolve both by gating on the drone's own stack size: big stack
-    // requires the normal minAmount batch, small stack accepts any unit.
-    // (Manual play keeps the minAmount filter throughout.)
+    // Per-block batch size now scales with each consumer's own capacity
+    // via consumerConfig.getMinAmountFor — a 10-cap factory and a 100-cap
+    // one share one fill-pct slider that produces sensible thresholds for
+    // each. Probe stays a fixed 20 because it's just an acceptance probe;
+    // the real gate is the per-block minAmount comparison below.
+    const PROBE_AMOUNT = 20;
     const autopilotOn = Core.settings.getBool("eui-auto-pilot", false);
-    const deliverThreshold = autopilotOn
-        ? (stack.amount >= minAmount ? minAmount : 1)
-        : minAmount;
 
     Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, b => {
         if (!timer.canInteract()) return;
@@ -67,6 +56,21 @@ Events.run(Trigger.update, () => {
         if (blockPriority < requestPriority) return;
         if (blockPriority == requestPriority && request instanceof Building) return;
 
+        const minAmount = consumerConfig.getMinAmountFor(block);
+        // Two competing concerns when autopilot is steering:
+        //   1) A leftover stack smaller than this consumer's batch size
+        //      must still be deliverable, otherwise the drone parks at
+        //      the consumer holding 3 items it could just hand over.
+        //   2) A full stack must NOT be drip-fed one item at a time as
+        //      the consumer chews through it — otherwise the drone gets
+        //      stuck topping up the same factory every tick (10/10 ->
+        //      9/10 -> drone delivers 1 -> 10/10 -> ...) and the rest
+        //      of the line starves.
+        // Manual play keeps the minAmount filter throughout.
+        const deliverThreshold = autopilotOn
+            ? (stack.amount >= minAmount ? minAmount : 1)
+            : minAmount;
+
         if (stack.amount > 0 && b.acceptStack(stack.item, stack.amount, player.unit()) >= deliverThreshold) {
             request = b;
             requestPriority = blockPriority;
@@ -81,9 +85,9 @@ Events.run(Trigger.update, () => {
             if (!b.ammo.isEmpty()) return;
             newRequest = getBestAmmo(block, core);
         } else if (block instanceof UnitFactory) {
-            newRequest = getUnitFactoryRequest(b, block, core, minAmount, probeAmount);
+            newRequest = getUnitFactoryRequest(b, block, core, minAmount, PROBE_AMOUNT);
         } else if (b.items) {
-            newRequest = getItemRequest(b, block, core, minAmount, probeAmount);
+            newRequest = getItemRequest(b, block, core, minAmount, PROBE_AMOUNT);
         }
         if (newRequest) {
             request = newRequest;
@@ -100,7 +104,10 @@ Events.run(Trigger.update, () => {
     if (!isCoreAvailible || !player.within(core, Vars.buildingRange)) return;
 
     if (stack.amount) {
-        if (stack.amount >= minAmount && storageFill.isItemReservedForStorage(stack.item, team)) return;
+        // Storage-reservation guard uses a fixed 5-unit floor (matches the
+        // hardcoded floor in storage-fill.js): if the stack is at least
+        // that big and a storage is reserving the item, hold it.
+        if (stack.amount >= 5 && storageFill.isItemReservedForStorage(stack.item, team)) return;
         if (autopilotHeadingNonCore()) return;
         Call.transferInventory(player, core);
         if (stack.amount > 0) {
