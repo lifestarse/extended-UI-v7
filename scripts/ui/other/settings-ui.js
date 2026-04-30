@@ -71,12 +71,38 @@ Events.on(EventType.ClientLoadEvent, () => {
             contentTable.checkPref("eui-DragPathfind", false);
         }
 
+        // The built-in "reset to defaults" button only knows about settings
+        // registered via checkPref/sliderPref. All our per-item / per-block /
+        // per-storage configs (core limits, storage thresholds, drain flags,
+        // consumer/turret/task priorities, etc.) are stored as separate
+        // prefix-keyed entries -- wipe those too via a Setting.changed hook
+        // that fires from inside the auto-reset loop.
+        const clearModExtras = () => {
+            try {
+                const valuesMap = Core.settings.values;
+                if (!valuesMap) return;
+                const keysToRemove = [];
+                valuesMap.orderedKeys().each(k => {
+                    if (k.indexOf("eui-") === 0 || k.indexOf("eui.") === 0) {
+                        keysToRemove.push(k);
+                    }
+                });
+                for (let i = 0; i < keysToRemove.length; i++) {
+                    Core.settings.remove(keysToRemove[i]);
+                }
+            } catch (e) {
+                log("eui reset cleanup: " + e);
+            }
+        };
+
         // Register sub-dialog buttons as proper Settings via pref() so the
         // SettingsTable's auto-rebuild slots them in BEFORE the trailing
         // "reset to defaults" button. Falls back to a plain .button() append
         // if the Setting subclass can't be created on this Mindustry build.
-        function pushButton(labelKey, dialog) {
+        function pushButton(labelKey, dialog, onReset) {
             try {
+                const settingName = "eui-btn-" + labelKey.replace(/\./g, "-");
+                Core.settings.defaults(settingName, false);
                 const Setting = SettingsMenuDialog.SettingsTable.Setting;
                 const setting = new JavaAdapter(Setting, {
                     add: function(table) {
@@ -85,7 +111,8 @@ Events.on(EventType.ClientLoadEvent, () => {
                             .width(360).height(50).pad(8);
                         table.row();
                     }
-                }, "eui-btn-" + labelKey.replace(/\./g, "-"));
+                }, settingName);
+                if (onReset) setting.changed = onReset;
                 contentTable.pref(setting);
             } catch (e) {
                 contentTable.row();
@@ -93,7 +120,7 @@ Events.on(EventType.ClientLoadEvent, () => {
                     .width(360).height(50).pad(8);
             }
         }
-        pushButton("eui.core-limits.open", coreLimitsDialog);
+        pushButton("eui.core-limits.open", coreLimitsDialog, clearModExtras);
         pushButton("eui.collect-targets.open", collectTargetsDialog);
         pushButton("eui.storage.open", storageListDialog);
         pushButton("eui.task-priority.open", taskPriorityDialog);
