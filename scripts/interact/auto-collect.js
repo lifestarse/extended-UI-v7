@@ -2,6 +2,17 @@ const timer = require("extended-ui/interact/interact-timer");
 const collectConfig = require("extended-ui/interact/collect-config");
 const storageFill = require("extended-ui/interact/storage-fill");
 const playerBusy = require("extended-ui/interact/player-busy");
+const autoPilot = require("extended-ui/interact/auto-pilot");
+
+// Same gating as auto-fill: when autopilot is steering toward a non-core
+// destination, don't intercept the stack with a core deposit just because
+// the path momentarily crossed core range.
+function autopilotHeadingNonCore() {
+    if (!Core.settings.getBool("eui-auto-pilot", false)) return false;
+    const target = autoPilot.getTarget();
+    if (!target) return false;
+    return target.kind !== "core-dump" && target.kind !== "core-fetch";
+}
 
 Events.run(Trigger.update, () => {
     if (!Core.settings.getBool("eui-auto-fill", false)) return;
@@ -38,6 +49,7 @@ Events.run(Trigger.update, () => {
         // Otherwise the drone deadlocks: too few items to deliver anywhere, but
         // forbidden from dumping back to core.
         if (stack.amount >= 5 && storageFill.isItemReservedForStorage(stack.item, team)) return;
+        if (autopilotHeadingNonCore()) return;
         if (core && player.within(core, Vars.buildingRange)) {
             if (!Core.settings.getBool("eui-interact-core", false)) return;
             Call.transferInventory(player, core);

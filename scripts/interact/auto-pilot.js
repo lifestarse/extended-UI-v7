@@ -13,6 +13,12 @@ const ARRIVE_PADDING = Vars.tilesize * 2;
 let cached = null;
 let scanTick = RESCAN_TICKS;
 
+// Other modules (auto-fill, auto-collect) consult this so they don't dump
+// the drone's stack into the core just because the autopilot's path took
+// it through core range -- only "core-dump" / "core-fetch" trips should
+// trigger the core transfer there.
+exports.getTarget = function() { return cached; };
+
 Events.run(Trigger.update, () => {
     // Master switch: bottom-bar auto-fill button gates every automation.
     if (!Core.settings.getBool("eui-auto-fill", false)
@@ -103,11 +109,17 @@ function pickTarget(unit, team) {
         }
         if (fillOn) {
             const c = findBestConsumer(unit, stack.item, team);
-            if (c) candidates.push({ task: "consumer-deliver", target: c });
+            if (c) {
+                c.kind = "consumer-deliver";
+                candidates.push({ task: "consumer-deliver", target: c });
+            }
         }
         if (storageOn) {
             const s = findBestStorageNeed(unit, stack.item, team);
-            if (s) candidates.push({ task: "storage-deliver", target: s });
+            if (s) {
+                s.kind = "storage-deliver";
+                candidates.push({ task: "storage-deliver", target: s });
+            }
         }
         if (coreOn) {
             const dumpCore = Vars.player.closestCore();
@@ -129,7 +141,10 @@ function pickTarget(unit, team) {
         }
         if (factoryOn || drillOn) {
             const p = findBestProducer(unit, team, factoryOn, drillOn, null);
-            if (p) candidates.push({ task: "producer-collect", target: p });
+            if (p) {
+                p.kind = "producer-collect";
+                candidates.push({ task: "producer-collect", target: p });
+            }
         }
     }
 

@@ -4,6 +4,19 @@ const storageFill = require("extended-ui/interact/storage-fill");
 const consumerConfig = require("extended-ui/interact/consumer-config");
 const turretAmmoConfig = require("extended-ui/interact/turret-ammo-config");
 const playerBusy = require("extended-ui/interact/player-busy");
+const autoPilot = require("extended-ui/interact/auto-pilot");
+
+// True when the autopilot is steering the drone to a non-core destination.
+// We use this to suppress the core-dump fallback in this module: otherwise
+// the drone deposits its stack the moment its path crosses core range,
+// even though the autopilot intends it for a producer-topup / consumer
+// delivery / storage fill elsewhere.
+function autopilotHeadingNonCore() {
+    if (!Core.settings.getBool("eui-auto-pilot", false)) return false;
+    const target = autoPilot.getTarget();
+    if (!target) return false;
+    return target.kind !== "core-dump" && target.kind !== "core-fetch";
+}
 
 Events.run(Trigger.update, () => {
     if (!Core.settings.getBool("eui-auto-fill", false) || !timer.canInteract()) return;
@@ -72,6 +85,7 @@ Events.run(Trigger.update, () => {
 
     if (stack.amount) {
         if (stack.amount >= minAmount && storageFill.isItemReservedForStorage(stack.item, team)) return;
+        if (autopilotHeadingNonCore()) return;
         Call.transferInventory(player, core);
         if (stack.amount > 0) {
             Call.dropItem(0);
