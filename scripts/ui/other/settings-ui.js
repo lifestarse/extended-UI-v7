@@ -8,6 +8,41 @@ const taskPriority = require("extended-ui/interact/task-priority");
 const storageEditDialog = require("extended-ui/ui/dialogs/storage-edit-dialog");
 const iconsUtil = require("extended-ui/utils/icons");
 
+// Wipe every Core.settings key that starts with any of the given prefixes.
+function removeKeysByPrefix(prefixes) {
+    try {
+        const valuesMap = Core.settings.values;
+        if (!valuesMap) return;
+        const keysToRemove = [];
+        valuesMap.orderedKeys().each(k => {
+            for (let i = 0; i < prefixes.length; i++) {
+                if (k.indexOf(prefixes[i]) === 0) {
+                    keysToRemove.push(k);
+                    return;
+                }
+            }
+        });
+        for (let i = 0; i < keysToRemove.length; i++) {
+            Core.settings.remove(keysToRemove[i]);
+        }
+    } catch (e) {
+        log("eui prefix clear: " + e);
+    }
+}
+
+// Standard "Сбросить по умолчанию" button for sub-dialogs — same labels and
+// confirm flow as Mindustry's built-in settings reset. Each caller supplies
+// the per-dialog reset action (which clears its own settings and rebuilds).
+function addStandardReset(dialog, doReset) {
+    dialog.buttons.button(Core.bundle.get("settings.reset"), () => {
+        Vars.ui.showConfirm(
+            Core.bundle.get("confirm"),
+            Core.bundle.get("settings.reset.confirm"),
+            doReset
+        );
+    }).size(240, 60);
+}
+
 Events.on(EventType.ClientLoadEvent, () => {
     Vars.ui.settings.addCategory("@eui.name", t => {
         t.row();
@@ -111,16 +146,10 @@ Events.on(EventType.ClientLoadEvent, () => {
 function buildCoreLimitsDialog() {
     const dialog = new BaseDialog(Core.bundle.get("eui.core-limits.title"));
     dialog.addCloseButton();
-    dialog.buttons.button(Core.bundle.get("eui.core-limits.reset-all"), () => {
-        Vars.ui.showConfirm(
-            Core.bundle.get("eui.core-limits.reset-all"),
-            Core.bundle.get("eui.core-limits.reset-confirm"),
-            () => {
-                Vars.content.items().each(item => coreLimits.resetLimit(item));
-                rebuild();
-            }
-        );
-    }).size(240, 60);
+    addStandardReset(dialog, () => {
+        Vars.content.items().each(item => coreLimits.resetLimit(item));
+        rebuild();
+    });
 
     let listTable = null;
     dialog.cont.add(Core.bundle.get("eui.core-limits.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
@@ -172,6 +201,10 @@ function buildCoreLimitsDialog() {
 function buildCollectTargetsDialog() {
     const dialog = new BaseDialog(Core.bundle.get("eui.collect-targets.title"));
     dialog.addCloseButton();
+    addStandardReset(dialog, () => {
+        removeKeysByPrefix(["eui-collect-factory-", "eui-collect-drill-"]);
+        rebuild();
+    });
 
     let listTable = null;
     dialog.cont.add(Core.bundle.get("eui.collect-targets.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
@@ -241,6 +274,10 @@ function buildCollectTargetsDialog() {
 function buildStorageListDialog() {
     const dialog = new BaseDialog(Core.bundle.get("eui.storage.title"));
     dialog.addCloseButton();
+    addStandardReset(dialog, () => {
+        removeKeysByPrefix(["eui-storage-fill-", "eui-storage-drain-"]);
+        rebuild();
+    });
 
     let listTable = null;
     dialog.cont.add(Core.bundle.get("eui.storage.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
@@ -301,12 +338,22 @@ function buildTaskPriorityDialog() {
 
     let listTable = null;
 
-    dialog.buttons.button(Core.bundle.get("eui.task-priority.reset-all"), () => {
-        for (let i = 0; i < taskPriority.TASKS.length; i++) {
-            taskPriority.reset(taskPriority.TASKS[i].id);
-        }
+    // This dialog edits task priorities AND consumer enable/priority AND
+    // turret-ammo per-pair settings (via the nested edit dialog), so the
+    // reset clears all three trees plus the legacy turret-priority prefix
+    // that consumer-config still falls back to for migration.
+    addStandardReset(dialog, () => {
+        removeKeysByPrefix([
+            "eui-task-priority-",
+            "eui-consumer-enabled-",
+            "eui-consumer-priority-",
+            "eui-consumer-cat-expanded-",
+            "eui-turret-priority-",
+            "eui-turret-ammo-enabled-",
+            "eui-turret-ammo-priority-"
+        ]);
         rebuild();
-    }).size(240, 60);
+    });
 
     dialog.cont.add(Core.bundle.get("eui.task-priority.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
     dialog.cont.row();
