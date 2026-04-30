@@ -45,7 +45,11 @@ Events.run(Trigger.update, () => {
         const block = b.tile.block();
         if (block instanceof ItemTurret && !turretsOn) return;
         if (!consumerConfig.isEnabled(block)) return;
-        if (!block.consumers.find(c => c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic)) return;
+        // Turrets accept ammo via ammoTypes (not the consumers[] array),
+        // so the ConsumeItems-style filter would skip them — keep them
+        // in the loop so getBestAmmo / acceptStack can do their thing.
+        const isItemTurret = block instanceof ItemTurret;
+        if (!isItemTurret && !block.consumers.find(c => c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic)) return;
         let blockPriority = config.get(block.name, 0);
         const custom = consumerConfig.getPriority(block);
         if (custom > 0) blockPriority = custom;
@@ -54,7 +58,7 @@ Events.run(Trigger.update, () => {
         if (blockPriority < requestPriority) return;
         if (blockPriority == requestPriority && request instanceof Building) return;
 
-        const minAmount = consumerConfig.getMinAmountFor(block);
+        const minAmount = consumerConfig.getMinAmountFor(block, stack.item);
         // Two competing concerns when autopilot is steering:
         //   1) A leftover stack smaller than this consumer's batch size
         //      must still be deliverable, otherwise the drone parks at

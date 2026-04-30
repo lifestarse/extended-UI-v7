@@ -25,8 +25,27 @@ exports.getFillPct = function() {
 // Per-block batch size derived from the fill-pct slider.
 // floor(cap * pct / 100), clamped to a minimum of 1 so blocks with tiny
 // capacity (or unknown cap) still get a workable threshold.
-exports.getMinAmountFor = function(block) {
-    const cap = (block && block.itemCapacity) || 0;
+//
+// For ItemTurrets the relevant cap is ammo, not items: maxAmmo is in
+// ammo-units and each item produces ammoMultiplier ammo-units, so the
+// item-equivalent capacity is maxAmmo / ammoMultiplier. When the caller
+// knows which item the drone is delivering we use the matching turret
+// multiplier; otherwise we fall back to itemCapacity (which on most
+// turrets is the default 10) so the threshold is at least workable.
+exports.getMinAmountFor = function(block, item) {
+    if (!block) return 1;
+    let cap = 0;
+    try {
+        if (block instanceof ItemTurret && block.maxAmmo > 0 && block.ammoTypes) {
+            if (item != null) {
+                const ammoType = block.ammoTypes.get(item);
+                if (ammoType && ammoType.ammoMultiplier > 0) {
+                    cap = Math.floor(block.maxAmmo / ammoType.ammoMultiplier);
+                }
+            }
+        }
+    } catch (e) {}
+    if (cap <= 0) cap = block.itemCapacity || 0;
     if (cap <= 0) return 1;
     return Math.max(1, Math.floor(cap * exports.getFillPct() / 100));
 }

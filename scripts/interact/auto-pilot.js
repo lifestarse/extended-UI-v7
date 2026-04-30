@@ -58,8 +58,14 @@ Events.run(Trigger.update, () => {
 
 function isStale(target, unit) {
     if (!target.b || target.b.dead || target.b.tile == null || target.b.tile.build !== target.b) return true;
-    if (target.kind === "core-fetch" || target.kind === "core-dump") return false;
     const stack = unit.stack;
+    // Core trips self-stale on completion so pickTarget can flip the
+    // drone to consumer-deliver / producer-collect immediately. Without
+    // this the drone parks at the core after a fetch and auto-fill's
+    // own at-core deposit branch dumps the stack right back in (this
+    // was the turret-graphite loop: fetch -> dump -> fetch -> ...).
+    if (target.kind === "core-fetch") return stack.amount > 0;
+    if (target.kind === "core-dump") return stack.amount === 0;
     if (target.kind === "producer-topup") {
         if (stack.amount === 0 || stack.item !== target.item) return true;
         const cap = unit.type ? unit.type.itemCapacity : 0;
@@ -82,7 +88,7 @@ function isStale(target, unit) {
     if (stack.amount > 0 && stack.item) {
         if (!target.expectsConsumer) return true;
         if (target.item !== stack.item) return true;
-        const blockMin = consumerConfig.getMinAmountFor(target.b.block);
+        const blockMin = consumerConfig.getMinAmountFor(target.b.block, stack.item);
         return target.b.acceptStack(stack.item, blockMin, unit) < blockMin;
     }
     if (target.expectsConsumer) return true;
@@ -227,14 +233,26 @@ function findBestConsumer(unit, item, team) {
     builds.each(b => {
         try {
             const block = b.block;
-            if (!block || !block.consumers) return;
-            const wantsItem = block.consumers.find(c =>
-                c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);
-            if (!wantsItem) return;
+            if (!block) return;
+            // ItemTurrets accept ammo through their ammoTypes map, not
+            // through the consumers[] array — so the ConsumeItems-style
+            // filter we use for factories misses them. Treat any
+            // ItemTurret that actually accepts the drone's stack item as
+            // a valid consumer-deliver target so the autopilot can route
+            // ammo (otherwise the drone fetches at the core, finds no
+            // valid consumer-deliver candidate, and dumps the ammo back
+            // in — the double-turret graphite loop).
+            const isItemTurret = block instanceof ItemTurret;
+            if (!isItemTurret) {
+                if (!block.consumers) return;
+                const wantsItem = block.consumers.find(c =>
+                    c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);
+                if (!wantsItem) return;
+            }
             // Per-block batch threshold: scales with the consumer's own
-            // capacity so a 10-cap factory and a 100-cap one share the
-            // same fill-percent slider without one of them falling off.
-            const blockMin = consumerConfig.getMinAmountFor(block);
+            // capacity (ammo capacity for turrets) so a 10-cap factory
+            // and a 100-cap one share the same fill-percent slider.
+            const blockMin = consumerConfig.getMinAmountFor(block, item);
             if (b.acceptStack(item, blockMin, unit) < blockMin) return;
 
             const stock = b.items ? b.items.get(item) : 0;
