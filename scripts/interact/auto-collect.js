@@ -3,6 +3,7 @@ const collectConfig = require("extended-ui/interact/collect-config");
 const storageFill = require("extended-ui/interact/storage-fill");
 const playerBusy = require("extended-ui/interact/player-busy");
 const autoPilot = require("extended-ui/interact/auto-pilot");
+const consumerConfig = require("extended-ui/interact/consumer-config");
 
 // Same gating as auto-fill: when autopilot is steering toward a non-core
 // destination, don't intercept the stack with a core deposit just because
@@ -98,11 +99,16 @@ Events.run(Trigger.update, () => {
 
 function findTopUpTarget(team, player, unit, item, factoryEnabled, drillEnabled) {
     // Top-up reaches here when the drone already carries `item` and is
-    // standing at a same-item producer. The pickup-threshold is a
-    // "should we visit this producer from idle?" gate, irrelevant for an
-    // in-flight top-up — any positive stock is usable, otherwise the
-    // drone freezes at a near-empty drill with a partial inventory.
+    // standing at a same-item producer. Drills always get pulled from on
+    // any positive stock — the drone is intentionally waiting on the
+    // mining cycle. Factories use the same drip-feed guard as auto-fill:
+    // with a substantial stack already in hand, refuse to trickle 2 at a
+    // time from a slow factory; with only a leftover scrap, take whatever
+    // is on offer.
     let target = null;
+    const stack = unit.stack;
+    const minAmount = consumerConfig.getMinAmount();
+    const factoryThr = stack.amount >= minAmount ? minAmount : 1;
     Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, b => {
         if (target) return;
         const block = b.tile.block();
@@ -110,7 +116,7 @@ function findTopUpTarget(team, player, unit, item, factoryEnabled, drillEnabled)
             && block.outputItems && b.items) {
             for (let i = 0; i < block.outputItems.length; i++) {
                 if (block.outputItems[i].item !== item) continue;
-                if (b.items.get(item) > 0) {
+                if (b.items.get(item) >= factoryThr) {
                     target = b;
                     return;
                 }

@@ -67,12 +67,17 @@ function isStale(target, unit) {
         // Stay put even when the drill just emptied — it'll mine more.
         // Only abandon if the producer can never give us this item again:
         // a drill whose dominantItem changed (vein depleted / tile swap)
-        // or a non-drill producer that's actually empty.
+        // or a non-drill producer below the drip-feed threshold (so the
+        // drone moves on to a faster producer instead of pulling 2 each
+        // regen cycle from one slow factory).
         if (target.b.block instanceof Drill) {
             if (target.b.dominantItem !== target.item) return true;
             return false;
         }
-        return !target.b.items || target.b.items.get(target.item) <= 0;
+        if (!target.b.items) return true;
+        const minAmount = consumerConfig.getMinAmount();
+        const thr = stack.amount >= minAmount ? minAmount : 1;
+        return target.b.items.get(target.item) < thr;
     }
     if (stack.amount > 0 && stack.item) {
         if (!target.expectsConsumer) return true;
@@ -253,6 +258,15 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
     // partial-delivered to a factory parks at the consumer with 3 of an
     // item because every drill is just under the user's collect threshold.
     const topUp = requireItem != null;
+    const stack = unit.stack;
+    const minAmount = consumerConfig.getMinAmount();
+    // Mirror of the auto-fill drip-feed guard. With a substantial stack the
+    // drone shouldn't pick a slow factory that only has 2 silicon — that
+    // strands it pulling 2 every regen cycle while other factories hit cap
+    // and stall. Small leftover stacks still take any positive stock so the
+    // drone doesn't get stuck holding 3 of an item.
+    const substantialStack = topUp && stack.amount >= minAmount;
+    const factoryTopUpThr = substantialStack ? minAmount : 1;
 
     builds.each(b => {
         try {
@@ -263,7 +277,7 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
                 && block.outputItems != null
                 && collectConfig.isFactoryEnabled(block)) {
                 if (!b.items) return;
-                const thr = topUp ? 1 : collectConfig.getPickupThreshold(block);
+                const thr = topUp ? factoryTopUpThr : collectConfig.getPickupThreshold(block);
                 for (let i = 0; i < block.outputItems.length; i++) {
                     const it = block.outputItems[i].item;
                     if (requireItem && it !== requireItem) continue;
