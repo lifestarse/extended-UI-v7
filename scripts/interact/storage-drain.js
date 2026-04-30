@@ -32,6 +32,17 @@ exports.findDrainSource = function(team) {
 }
 
 Events.run(Trigger.update, () => {
+    // Master switch: the bottom-bar auto-fill button gates every automation.
+    // Drain has no per-feature switch (per-item flags configure it instead),
+    // so we also gate on interact-core because drain only delivers to core.
+    if (!Core.settings.getBool("eui-auto-fill", false)) {
+        carrying = false;
+        return;
+    }
+    if (!Core.settings.getBool("eui-interact-core", false)) {
+        carrying = false;
+        return;
+    }
     if (!timer.canInteract()) return;
     if (playerBusy.isPlayerInteracting()) return;
     const player = Vars.player;

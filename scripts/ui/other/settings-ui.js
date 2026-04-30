@@ -71,33 +71,35 @@ Events.on(EventType.ClientLoadEvent, () => {
             contentTable.checkPref("eui-DragPathfind", false);
         }
 
+        // Sub-dialog buttons live inside the scrollable settings pane so the
+        // whole list scrolls together (no awkward fixed footer below it).
+        contentTable.row();
+        contentTable.button(
+            Core.bundle.get("eui.core-limits.open"),
+            Icon.box,
+            () => coreLimitsDialog.show()
+        ).width(360).height(50).pad(8);
+        contentTable.row();
+        contentTable.button(
+            Core.bundle.get("eui.collect-targets.open"),
+            Icon.box,
+            () => collectTargetsDialog.show()
+        ).width(360).height(50).pad(8);
+        contentTable.row();
+        contentTable.button(
+            Core.bundle.get("eui.storage.open"),
+            Icon.box,
+            () => storageListDialog.show()
+        ).width(360).height(50).pad(8);
+        contentTable.row();
+        contentTable.button(
+            Core.bundle.get("eui.task-priority.open"),
+            Icon.box,
+            () => taskPriorityDialog.show()
+        ).width(360).height(50).pad(8);
+
         return contentTable;
     })());
-
-    extendedUIDialogSettings.cont.row();
-    extendedUIDialogSettings.cont.button(
-        Core.bundle.get("eui.core-limits.open"),
-        Icon.box,
-        () => coreLimitsDialog.show()
-    ).width(360).height(50).pad(8);
-    extendedUIDialogSettings.cont.row();
-    extendedUIDialogSettings.cont.button(
-        Core.bundle.get("eui.collect-targets.open"),
-        Icon.box,
-        () => collectTargetsDialog.show()
-    ).width(360).height(50).pad(8);
-    extendedUIDialogSettings.cont.row();
-    extendedUIDialogSettings.cont.button(
-        Core.bundle.get("eui.storage.open"),
-        Icon.box,
-        () => storageListDialog.show()
-    ).width(360).height(50).pad(8);
-    extendedUIDialogSettings.cont.row();
-    extendedUIDialogSettings.cont.button(
-        Core.bundle.get("eui.task-priority.open"),
-        Icon.box,
-        () => taskPriorityDialog.show()
-    ).width(360).height(50).pad(8);
 
     global.eui.settings = extendedUIDialogSettings;
     global.eui.coreLimitsDialog = coreLimitsDialog;

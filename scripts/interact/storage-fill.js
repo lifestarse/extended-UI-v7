@@ -8,6 +8,7 @@ exports.isManagedStorage = function(block) {
 }
 
 exports.isItemReservedForStorage = function(item, team) {
+    if (!Core.settings.getBool("eui-auto-fill", false)) return false;
     if (!Core.settings.getBool("eui-storage-fill", false)) return false;
     if (!team) return false;
     const data = team.data();
@@ -30,7 +31,13 @@ exports.isItemReservedForStorage = function(item, team) {
     return reserved;
 }
 
+// Loaded after our exports above so storage-drain (which requires this
+// module) gets its own usable reference; we use storageDrain only inside
+// Trigger.update.
+const storageDrain = require("extended-ui/interact/storage-drain");
+
 Events.run(Trigger.update, () => {
+    if (!Core.settings.getBool("eui-auto-fill", false)) return;
     if (!Core.settings.getBool("eui-storage-fill", false) || !timer.canInteract()) return;
     if (playerBusy.isPlayerInteracting()) return;
 
@@ -42,13 +49,29 @@ Events.run(Trigger.update, () => {
     const core = player.closestCore();
 
     if (stack.amount > 0 && stack.item) {
+        // Drained items are headed for the core; don't reroute them into
+        // another fill-target storage on the way (would shuttle infinitely
+        // when the drain source keeps producing).
+        if (storageDrain.isCarrying()) return;
+
+        const autopilotOn = Core.settings.getBool("eui-auto-pilot", false);
+        const cap = (unit.type && unit.type.itemCapacity) || 0;
+        // Mirror the fetch-side trip threshold: with auto-pilot on, only top
+        // up storages whose deficit is at least one full inventory. Otherwise
+        // a tiny deficit on a closer storage steals deliveries meant for a
+        // bigger one further away.
+        const minDeficit = autopilotOn ? cap : 0;
+
         let target = null;
         Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, b => {
             if (target) return;
             if (!exports.isManagedStorage(b.block)) return;
             const threshold = storageConfig.getThreshold(b, stack.item);
             if (threshold <= 0) return;
-            if (!b.items || b.items.get(stack.item) >= threshold) return;
+            if (!b.items) return;
+            const stock = b.items.get(stack.item);
+            if (stock >= threshold) return;
+            if (minDeficit > 0 && (threshold - stock) < minDeficit) return;
             if (b.acceptStack(stack.item, stack.amount, unit) < 5) return;
             target = b;
         });
@@ -59,6 +82,7 @@ Events.run(Trigger.update, () => {
         return;
     }
 
+    if (!Core.settings.getBool("eui-interact-core", false)) return;
     if (!core || !player.within(core, Vars.buildingRange)) return;
 
     const autopilotOn = Core.settings.getBool("eui-auto-pilot", false);

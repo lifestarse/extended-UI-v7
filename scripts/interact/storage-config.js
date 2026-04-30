@@ -33,6 +33,10 @@ exports.setThreshold = function(b, item, value) {
         Core.settings.remove(key(b, item));
     } else {
         Core.settings.put(key(b, item), v + "");
+        // Mutually exclusive with drain: setting a fill goal clears the drain
+        // flag so the drone never shuttles the same item in and out of the
+        // same storage forever.
+        Core.settings.remove(drainKey(b, item));
     }
 }
 
@@ -51,6 +55,7 @@ exports.getDrain = function(b, item) {
 exports.setDrain = function(b, item, value) {
     if (value) {
         Core.settings.put(drainKey(b, item), true);
+        Core.settings.remove(key(b, item));
     } else {
         Core.settings.remove(drainKey(b, item));
     }

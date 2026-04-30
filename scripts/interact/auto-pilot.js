@@ -14,7 +14,9 @@ let cached = null;
 let scanTick = RESCAN_TICKS;
 
 Events.run(Trigger.update, () => {
-    if (!Core.settings.getBool("eui-auto-pilot", false)) {
+    // Master switch: bottom-bar auto-fill button gates every automation.
+    if (!Core.settings.getBool("eui-auto-fill", false)
+        || !Core.settings.getBool("eui-auto-pilot", false)) {
         cached = null;
         return;
     }
@@ -74,10 +76,12 @@ function pickTarget(unit, team) {
     const fillOn = Core.settings.getBool("eui-auto-fill", false);
     const factoryOn = Core.settings.getBool("eui-auto-collect-factory", false);
     const drillOn = Core.settings.getBool("eui-auto-collect-drill", false);
+    // Bottom-bar interact-core button gates every core trip.
+    const coreOn = Core.settings.getBool("eui-interact-core", false);
 
     // Drain trips override everything else: once items are picked up from
     // a drain storage, the drone heads straight to core to unload them.
-    if (stack.amount > 0 && stack.item && storageDrain.isCarrying()) {
+    if (stack.amount > 0 && stack.item && storageDrain.isCarrying() && coreOn) {
         const core = Vars.player.closestCore();
         if (core) {
             return { x: core.x, y: core.y, b: core, item: stack.item, expectsConsumer: false, kind: "core-dump" };
@@ -105,20 +109,24 @@ function pickTarget(unit, team) {
             const s = findBestStorageNeed(unit, stack.item, team);
             if (s) candidates.push({ task: "storage-deliver", target: s });
         }
-        const dumpCore = Vars.player.closestCore();
-        if (dumpCore) {
-            candidates.push({
-                task: "core-dump",
-                target: { x: dumpCore.x, y: dumpCore.y, b: dumpCore, item: stack.item, expectsConsumer: false, kind: "core-dump" }
-            });
+        if (coreOn) {
+            const dumpCore = Vars.player.closestCore();
+            if (dumpCore) {
+                candidates.push({
+                    task: "core-dump",
+                    target: { x: dumpCore.x, y: dumpCore.y, b: dumpCore, item: stack.item, expectsConsumer: false, kind: "core-dump" }
+                });
+            }
         }
     } else {
-        if (storageOn) {
+        if (storageOn && coreOn) {
             const fetch = findCoreFetchForStorage(unit, team);
             if (fetch) candidates.push({ task: "storage-fetch", target: fetch });
         }
-        const drain = storageDrain.findDrainSource(team);
-        if (drain) candidates.push({ task: "storage-drain-fetch", target: drain });
+        if (coreOn) {
+            const drain = storageDrain.findDrainSource(team);
+            if (drain) candidates.push({ task: "storage-drain-fetch", target: drain });
+        }
         if (factoryOn || drillOn) {
             const p = findBestProducer(unit, team, factoryOn, drillOn, null);
             if (p) candidates.push({ task: "producer-collect", target: p });

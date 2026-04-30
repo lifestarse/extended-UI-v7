@@ -4,6 +4,7 @@ const storageFill = require("extended-ui/interact/storage-fill");
 const playerBusy = require("extended-ui/interact/player-busy");
 
 Events.run(Trigger.update, () => {
+    if (!Core.settings.getBool("eui-auto-fill", false)) return;
     if (!timer.canInteract()) return;
     if (playerBusy.isPlayerInteracting()) return;
 
@@ -38,6 +39,7 @@ Events.run(Trigger.update, () => {
         // forbidden from dumping back to core.
         if (stack.amount >= 5 && storageFill.isItemReservedForStorage(stack.item, team)) return;
         if (core && player.within(core, Vars.buildingRange)) {
+            if (!Core.settings.getBool("eui-interact-core", false)) return;
             Call.transferInventory(player, core);
             timer.increase();
         }

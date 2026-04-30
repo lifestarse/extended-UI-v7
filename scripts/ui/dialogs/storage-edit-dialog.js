@@ -63,7 +63,11 @@ exports.build = function(building, onClose) {
 
         parent.check("", storageConfig.getDrain(building, item), v => {
             storageConfig.setDrain(building, item, v);
-        }).pad(4).tooltip(Core.bundle.get("eui.storage.drain-tooltip"));
+            // Drain and threshold are mutually exclusive -- enabling drain
+            // clears the fill goal in storageConfig, sync the field text too.
+            if (v) fieldElement.setText("0");
+        }).update(c => c.setChecked(storageConfig.getDrain(building, item)))
+          .pad(4).tooltip(Core.bundle.get("eui.storage.drain-tooltip"));
 
         parent.row();
     }
