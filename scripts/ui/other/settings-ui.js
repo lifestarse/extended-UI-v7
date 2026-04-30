@@ -71,27 +71,10 @@ Events.on(EventType.ClientLoadEvent, () => {
             contentTable.checkPref("eui-DragPathfind", false);
         }
 
-        // Add the four sub-dialog buttons directly after the prefs. They land
-        // after the auto-appended "reset to defaults" button -- that's fine,
-        // we hook the reset's click below so it does the right thing.
-        function addExtraButtons() {
-            contentTable.row();
-            contentTable.button(Core.bundle.get("eui.core-limits.open"), Icon.box, () => coreLimitsDialog.show()).width(360).height(50).pad(8);
-            contentTable.row();
-            contentTable.button(Core.bundle.get("eui.collect-targets.open"), Icon.box, () => collectTargetsDialog.show()).width(360).height(50).pad(8);
-            contentTable.row();
-            contentTable.button(Core.bundle.get("eui.storage.open"), Icon.box, () => storageListDialog.show()).width(360).height(50).pad(8);
-            contentTable.row();
-            contentTable.button(Core.bundle.get("eui.task-priority.open"), Icon.box, () => taskPriorityDialog.show()).width(360).height(50).pad(8);
-        }
-        addExtraButtons();
-
-        // Mindustry's built-in reset only resets settings registered via
-        // checkPref/sliderPref. Our mod also stores tons of prefix-keyed
-        // configs (per-item core limits, per-storage thresholds and drain
-        // flags, consumer/turret/task priorities, auto-collect filters,
-        // etc.). Replace the reset button's click handler so it wipes every
-        // "eui-" / "eui." setting and rebuilds the table.
+        // Wipe every "eui-" / "eui." key from Core.settings -- covers both
+        // SettingsTable-registered prefs and all the prefix-keyed extras
+        // (per-item core limits, per-storage thresholds and drain flags,
+        // consumer/turret/task priorities, auto-collect filters, etc.).
         function clearEuiSettings() {
             try {
                 const valuesMap = Core.settings.values;
@@ -110,41 +93,51 @@ Events.on(EventType.ClientLoadEvent, () => {
             }
         }
 
-        function findResetButton() {
+        // Each pref method auto-appends a "reset to defaults" button at the
+        // end of the table. Hide it (size 0 + invisible) so we can place our
+        // own reset at the very bottom of the pane, after the sub-dialog
+        // buttons.
+        function hideAutoReset() {
             try {
                 const cells = contentTable.getCells();
-                if (!cells) return null;
-                const resetText = Core.bundle.get("settings.reset");
-                if (!resetText) return null;
-                for (let i = 0; i < cells.size; i++) {
-                    const cell = cells.get(i);
-                    const elem = cell.get();
-                    if (!elem || !elem.getText) continue;
-                    try {
-                        const t = elem.getText();
-                        if (t && t.toString().equals(resetText)) return elem;
-                    } catch (e) {}
+                if (cells && cells.size > 0) {
+                    const last = cells.peek();
+                    const elem = last.get();
+                    if (elem) elem.visible = false;
+                    last.size(0, 0).pad(0).space(0);
                 }
-            } catch (e) {}
-            return null;
-        }
-
-        function wrapResetButton() {
-            try {
-                const btn = findResetButton();
-                if (!btn) return;
-                btn.clearListeners();
-                btn.clicked(() => {
-                    clearEuiSettings();
-                    try { contentTable.rebuild(); } catch (e) {}
-                    addExtraButtons();
-                    wrapResetButton();
-                });
             } catch (e) {
-                log("eui wrap reset: " + e);
+                log("eui hide reset: " + e);
             }
         }
-        wrapResetButton();
+
+        function addExtraButtons() {
+            contentTable.row();
+            contentTable.button(Core.bundle.get("eui.core-limits.open"), Icon.box, () => coreLimitsDialog.show()).width(360).height(50).pad(8);
+            contentTable.row();
+            contentTable.button(Core.bundle.get("eui.collect-targets.open"), Icon.box, () => collectTargetsDialog.show()).width(360).height(50).pad(8);
+            contentTable.row();
+            contentTable.button(Core.bundle.get("eui.storage.open"), Icon.box, () => storageListDialog.show()).width(360).height(50).pad(8);
+            contentTable.row();
+            contentTable.button(Core.bundle.get("eui.task-priority.open"), Icon.box, () => taskPriorityDialog.show()).width(360).height(50).pad(8);
+        }
+
+        // Our own reset button at the very bottom. Plain Arc button() so the
+        // click handler is wired by Arc itself (no custom listener juggling).
+        function addCustomReset() {
+            contentTable.row();
+            contentTable.button(Core.bundle.get("settings.reset"), () => {
+                clearEuiSettings();
+                try { contentTable.rebuild(); } catch (e) {}
+                hideAutoReset();
+                addExtraButtons();
+                addCustomReset();
+            }).margin(14);
+        }
+
+        hideAutoReset();
+        addExtraButtons();
+        addCustomReset();
 
         return contentTable;
     })());
