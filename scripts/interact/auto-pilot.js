@@ -62,10 +62,17 @@ function isStale(target, unit) {
     const stack = unit.stack;
     if (target.kind === "producer-topup") {
         if (stack.amount === 0 || stack.item !== target.item) return true;
-        if (!target.b.items || target.b.items.get(target.item) <= 0) return true;
         const cap = unit.type ? unit.type.itemCapacity : 0;
         if (cap > 0 && stack.amount >= cap) return true;
-        return false;
+        // Stay put even when the drill just emptied — it'll mine more.
+        // Only abandon if the producer can never give us this item again:
+        // a drill whose dominantItem changed (vein depleted / tile swap)
+        // or a non-drill producer that's actually empty.
+        if (target.b.block instanceof Drill) {
+            if (target.b.dominantItem !== target.item) return true;
+            return false;
+        }
+        return !target.b.items || target.b.items.get(target.item) <= 0;
     }
     if (stack.amount > 0 && stack.item) {
         if (!target.expectsConsumer) return true;
@@ -276,7 +283,12 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
                 if (requireItem && dom !== requireItem) return;
                 if (!collectConfig.isDrillItemEnabled(dom)) return;
                 const stock = b.items.get(dom);
-                const thr = topUp ? 1 : collectConfig.getPickupThreshold(block);
+                // Top-up: keep the drill as a candidate even at stock=0.
+                // The drone is committed to the item; if the drill just
+                // emptied (drone took the last unit) the right move is to
+                // wait for the next mining cycle here, not bounce off to
+                // deliver one item to a faraway consumer.
+                const thr = topUp ? 0 : collectConfig.getPickupThreshold(block);
                 if (stock >= thr && stock > bestScore) {
                     bestScore = stock;
                     bestB = b;
