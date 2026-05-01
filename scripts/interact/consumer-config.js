@@ -306,26 +306,27 @@ exports.categorize = function(block) {
 }
 
 // Item-equivalent stock of `item` currently held by `b`. For most
-// blocks this is just b.items.get(item). For ItemTurret it walks the
-// ammo queue and sums entry.amount for entries matching the item —
-// turrets store ammo in b.ammo, NOT b.items (handleStack converts
-// items into AmmoEntry without ever populating items[]). Reading
-// b.items.get(pyratite) on a turret returns 0 even when the turret
-// is full of pyratite ammo, so the slider's `stock < target` gate
-// is permanently satisfied and drone refills the turret 1 item at a
-// time on every visit, regardless of slider %. With this helper the
-// gate compares against actual ammo and the slider behaves as
-// labeled.
+// blocks this is just b.items.get(item). For ItemTurret we derive
+// stock from acceptStack: the per-item cap minus the room the turret
+// reports it can still take is the items it currently holds. Reading
+// b.ammo entries directly was unreliable — Mindustry's AmmoEntry
+// .amount tracks shot accounting (decremented per fire, incremented
+// per ammoMultiplier on receive), and matching entries by item via
+// JS === can also miss when item references aren't reused by the
+// runtime. acceptStack is what every other gate already uses to
+// decide 'can the turret take more?', so deriving stock from the
+// same primitive keeps all the math consistent.
 exports.getItemStock = function(b, item) {
     if (!b || !item) return 0;
     try {
         if (b.block instanceof ItemTurret) {
-            if (!b.ammo) return 0;
-            let total = 0;
-            b.ammo.each(entry => {
-                if (entry && entry.item === item && entry.amount > 0) total += entry.amount;
-            });
-            return total;
+            const cap = exports.getCapacityFor(b.block, item);
+            if (cap <= 0) return 0;
+            const probe = Vars.player ? Vars.player.unit() : null;
+            const room = b.acceptStack(item, cap, probe);
+            if (room == null || room < 0) return cap;
+            if (room > cap) return 0;
+            return cap - room;
         }
     } catch (e) {}
     if (!b.items) return 0;
