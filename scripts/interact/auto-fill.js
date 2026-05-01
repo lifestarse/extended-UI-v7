@@ -31,13 +31,6 @@ Events.run(Trigger.update, () => {
     let config = Core.settings.getJson("eui.autofill.priority", ObjectMap, () => new ObjectMap());
 
     const turretsOn = Core.settings.getBool("eui-auto-fill-turrets", true);
-    // Per-block batch size now scales with each consumer's own capacity
-    // via consumerConfig.getMinAmountFor — a 10-cap factory and a 100-cap
-    // one share one fill-pct slider that produces sensible thresholds for
-    // each. Probe stays a fixed 20 because it's just an acceptance probe;
-    // the real gate is the per-block minAmount comparison below.
-    const PROBE_AMOUNT = 20;
-    const autopilotOn = Core.settings.getBool("eui-auto-pilot", false);
 
     Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, b => {
         if (!timer.canInteract()) return;
@@ -58,26 +51,25 @@ Events.run(Trigger.update, () => {
         if (blockPriority < requestPriority) return;
         if (blockPriority == requestPriority && request instanceof Building) return;
 
-        const droneCap = (player.unit().type && player.unit().type.itemCapacity) || 0;
-        const minAmount = consumerConfig.getDeliverableMinFor(block, stack.item, droneCap);
-        // Two competing concerns when autopilot is steering:
-        //   1) A leftover stack smaller than this consumer's batch size
-        //      must still be deliverable, otherwise the drone parks at
-        //      the consumer holding 3 items it could just hand over.
-        //   2) A full stack must NOT be drip-fed one item at a time as
-        //      the consumer chews through it — otherwise the drone gets
-        //      stuck topping up the same factory every tick (10/10 ->
-        //      9/10 -> drone delivers 1 -> 10/10 -> ...) and the rest
-        //      of the line starves.
-        // Manual play keeps the minAmount filter throughout.
-        const deliverThreshold = autopilotOn
-            ? (stack.amount >= minAmount ? minAmount : 1)
-            : minAmount;
-
-        if (stack.amount > 0 && b.acceptStack(stack.item, stack.amount, player.unit()) >= deliverThreshold) {
-            request = b;
-            requestPriority = blockPriority;
-            return;
+        // Same gate as the autopilot's findBestConsumer / isStale: the
+        // consumer must be below the user's fill target for the item the
+        // drone is carrying, AND must physically accept at least one
+        // unit. Without the stock<target check the drone would deliver
+        // tiny amounts to nearly-full consumers in range, or — worse —
+        // refuse to deliver to a partially-filled consumer because room
+        // < blockMin (the bug visible in last_log.txt: pyratite-mixer
+        // with sand=6/10 got skipped because 4 < 10, even though the
+        // user set fillPct=100 % meaning "top up to full").
+        const wantsItem = stack.amount > 0 && stack.item != null;
+        if (wantsItem) {
+            const target = consumerConfig.getTargetFill(block, stack.item);
+            const stock = b.items ? b.items.get(stack.item) : 0;
+            const accepted = b.acceptStack(stack.item, stack.amount, player.unit());
+            if (stock < target && accepted > 0) {
+                request = b;
+                requestPriority = blockPriority;
+                return;
+            }
         }
 
         if (blockPriority <= requestPriority) return;
@@ -88,9 +80,9 @@ Events.run(Trigger.update, () => {
             if (!b.ammo.isEmpty()) return;
             newRequest = getBestAmmo(block, core);
         } else if (block instanceof UnitFactory) {
-            newRequest = getUnitFactoryRequest(b, block, core, minAmount, PROBE_AMOUNT);
+            newRequest = getUnitFactoryRequest(b, block, core);
         } else if (b.items) {
-            newRequest = getItemRequest(b, block, core, minAmount, PROBE_AMOUNT);
+            newRequest = getItemRequest(b, block, core);
         }
         if (newRequest) {
             request = newRequest;
@@ -148,45 +140,56 @@ function getBestAmmo(turret, core) {
     return best;
 }
 
-function getUnitFactoryRequest(build, block, core, minAmount, probeAmount) {
-    if (build.currentPlan == -1) return null;
-    const stacks = block.plans.get(build.currentPlan).requirements
-
-    return findRequiredItem(stacks, build, core, minAmount, probeAmount);
+// Same gate as findBestConsumer: the consumer's stock for this item
+// must be below its fill target AND the consumer must accept at
+// least one unit right now. Anything stricter (room ≥ minAmount)
+// would refuse partially-filled consumers and shuttle items back to
+// the core instead of topping them up.
+function consumerWantsItem(build, item) {
+    try {
+        const target = consumerConfig.getTargetFill(build.block, item);
+        const stock = build.items ? build.items.get(item) : 0;
+        if (stock >= target) return false;
+        return build.acceptStack(item, 1, Vars.player.unit()) > 0;
+    } catch (e) { return false; }
 }
 
-function getItemRequest(build, block, core, minAmount, probeAmount) {
+function getUnitFactoryRequest(build, block, core) {
+    if (build.currentPlan == -1) return null;
+    const stacks = block.plans.get(build.currentPlan).requirements;
+    return findRequiredItem(stacks, build, core);
+}
+
+function getItemRequest(build, block, core) {
     const consumesItems = block.consumers.find(c => c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);
     if (!consumesItems) return null;
 
     if (consumesItems instanceof ConsumeItemFilter) {
-        return getFilterRequest(consumesItems, build, core, minAmount, probeAmount);
+        return getFilterRequest(consumesItems, build, core);
     } else if (consumesItems instanceof ConsumeItems) {
-        return findRequiredItem(consumesItems.items, build, core, minAmount, probeAmount);
+        return findRequiredItem(consumesItems.items, build, core);
     } else {
         return null;
     }
 }
 
-function getFilterRequest(filter, build, core, minAmount, probeAmount) {
+function getFilterRequest(filter, build, core) {
     let request = null;
-    let stop = false;
     Vars.content.items().each(item => {
-        if (filter.filter.get(item) && item != Items.blastCompound && core.items.get(item) >= coreLimits.getLimit(item)) {
-            if (build.acceptStack(item, probeAmount, Vars.player.unit()) >= minAmount && request == null && !stop) {
-                request = item;
-            } else {
-                stop = true;
-            }
-        }
+        if (request) return;
+        if (!filter.filter.get(item)) return;
+        if (item == Items.blastCompound) return;
+        if (core.items.get(item) < coreLimits.getLimit(item)) return;
+        if (!consumerWantsItem(build, item)) return;
+        request = item;
     });
     return request;
 }
 
-function findRequiredItem(stacks, build, core, minAmount, probeAmount) {
+function findRequiredItem(stacks, build, core) {
     for (let itemStack of stacks) {
         let item = itemStack.item;
-        if (core.items.get(item) >= coreLimits.getLimit(item) && build.acceptStack(item, probeAmount, Vars.player.unit()) >= minAmount) {
+        if (core.items.get(item) >= coreLimits.getLimit(item) && consumerWantsItem(build, item)) {
             return item;
         }
     }

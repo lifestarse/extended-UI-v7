@@ -61,6 +61,35 @@ exports.getDeliverableMinFor = function(block, item, droneCap) {
     return (droneCap > 0 && v > droneCap) ? droneCap : v;
 }
 
+// Item-equivalent capacity for a block — handles ItemTurret ammo math
+// the same way getMinAmountFor does, but returns the raw cap instead
+// of the percentage-derived batch size.
+exports.getCapacityFor = function(block, item) {
+    if (!block) return 0;
+    let cap = 0;
+    try {
+        if (block instanceof ItemTurret && block.maxAmmo > 0 && block.ammoTypes) {
+            if (item != null) {
+                const ammoType = block.ammoTypes.get(item);
+                if (ammoType && ammoType.ammoMultiplier > 0) {
+                    cap = Math.floor(block.maxAmmo / ammoType.ammoMultiplier);
+                }
+            }
+        }
+    } catch (e) {}
+    if (cap <= 0) cap = block.itemCapacity || 0;
+    return cap;
+}
+
+// Stock level the drone is supposed to keep this consumer at:
+// floor(cap * fillPct / 100). Drone visits when current stock falls
+// below this; isStale fires when stock climbs back to or above it.
+exports.getTargetFill = function(block, item) {
+    const cap = exports.getCapacityFor(block, item);
+    if (cap <= 0) return 1;
+    return Math.max(1, Math.floor(cap * exports.getFillPct() / 100));
+}
+
 exports.isEnabled = function(block) {
     return Core.settings.getBool(ENABLED_PREFIX + block.name, true);
 }

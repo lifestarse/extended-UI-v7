@@ -98,9 +98,15 @@ function isStale(target, unit) {
     if (stack.amount > 0 && stack.item) {
         if (!target.expectsConsumer) return true;
         if (target.item !== stack.item) return true;
-        const droneCap = unit.type ? unit.type.itemCapacity : 0;
-        const blockMin = consumerConfig.getDeliverableMinFor(target.b.block, stack.item, droneCap);
-        return target.b.acceptStack(stack.item, blockMin, unit) < blockMin;
+        // Stale once the consumer is at or above the user's fill target,
+        // OR if it physically can't accept anything right now (full
+        // buffer for this item). Note: NOT gated on "drone could deliver
+        // a full batch" — a drone with 3 items left should still finish
+        // delivering to a consumer that needs more.
+        const tgt = consumerConfig.getTargetFill(target.b.block, stack.item);
+        const stk = target.b.items ? target.b.items.get(stack.item) : 0;
+        if (stk >= tgt) return true;
+        return target.b.acceptStack(stack.item, 1, unit) <= 0;
     }
     if (target.expectsConsumer) return true;
     return !target.b.items || target.b.items.get(target.item) <= 0;
@@ -295,15 +301,23 @@ function findCoreFetchForConsumer(unit, team) {
                 c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);
             if (!ci) return;
 
-            const droneCap = (unit.type && unit.type.itemCapacity) || 0;
-            const minAmount = consumerConfig.getDeliverableMinFor(block, null, droneCap);
-            const probe = Math.max(minAmount, 5);
+            // Same gate as findBestConsumer / auto-fill: only fetch when
+            // this consumer's stock is below the user's fill target AND
+            // it physically accepts the item right now. Otherwise the
+            // drone fetches an item it can't deliver (consumer's slot is
+            // already at target) and shuttles it back to the core.
+            const stockOf = (item) => b.items ? b.items.get(item) : 0;
+            const wants = (item) => {
+                const target = consumerConfig.getTargetFill(block, item);
+                if (stockOf(item) >= target) return false;
+                return b.acceptStack(item, 1, probeUnit) > 0;
+            };
 
             if (ci instanceof ConsumeItems) {
                 for (let i = 0; i < ci.items.length; i++) {
                     const item = ci.items[i].item;
                     if (core.items.get(item) < coreLimits.getLimit(item)) continue;
-                    if (b.acceptStack(item, probe, probeUnit) < minAmount) continue;
+                    if (!wants(item)) continue;
                     chosenItem = item;
                     return;
                 }
@@ -313,7 +327,7 @@ function findCoreFetchForConsumer(unit, team) {
                     if (!ci.filter.get(item)) return;
                     try { if (item == Items.blastCompound) return; } catch (e) {}
                     if (core.items.get(item) < coreLimits.getLimit(item)) return;
-                    if (b.acceptStack(item, probe, probeUnit) < minAmount) return;
+                    if (!wants(item)) return;
                     chosenItem = item;
                 });
             } else {
@@ -323,7 +337,7 @@ function findCoreFetchForConsumer(unit, team) {
                     for (let i = 0; i < reqs.length; i++) {
                         const item = reqs[i].item;
                         if (core.items.get(item) < coreLimits.getLimit(item)) continue;
-                        if (b.acceptStack(item, probe, probeUnit) < minAmount) continue;
+                        if (!wants(item)) continue;
                         chosenItem = item;
                         return;
                     }
@@ -349,33 +363,33 @@ function findBestConsumer(unit, item, team) {
             if (!block) return;
             const isItemTurret = block instanceof ItemTurret;
             if (!isItemTurret) {
-                if (!block.consumers) {
-                    if (debugging) dlog(blockTag(b) + " skip: no consumers field");
-                    return;
-                }
+                if (!block.consumers) return;
                 const wantsItem = block.consumers.find(c =>
                     c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);
-                if (!wantsItem) {
-                    if (debugging) dlog(blockTag(b) + " skip: no ConsumeItems-style consumer (consumers.size=" + block.consumers.size + ")");
-                    return;
-                }
+                if (!wantsItem) return;
             }
-            if (!consumerConfig.isEnabled(block)) {
-                if (debugging) dlog(blockTag(b) + " skip: disabled in consumer-config");
+            if (!consumerConfig.isEnabled(block)) return;
+
+            // The fill-pct slider is the user's "top up consumers to X%
+            // of capacity" knob, so the right gate is "is this consumer
+            // BELOW that target?" — not "could the drone deliver a
+            // full batch?". With the old room-based filter and pct=100
+            // any partially-filled consumer was rejected (room < cap)
+            // even though the drone could top up the remaining slot,
+            // and the autopilot kept fetching from core only to dump
+            // back ("shuttle" loop).
+            const target = consumerConfig.getTargetFill(block, item);
+            const stock = b.items ? b.items.get(item) : 0;
+            if (stock >= target) {
+                if (debugging) dlog(blockTag(b) + " skip(" + item.name + "): stock=" + stock + " >= target=" + target);
                 return;
             }
-            const droneCap = (unit.type && unit.type.itemCapacity) || 0;
-            const blockMin = consumerConfig.getDeliverableMinFor(block, item, droneCap);
-            const accepted = b.acceptStack(item, blockMin, unit);
-            if (accepted < blockMin) {
-                if (debugging) dlog(blockTag(b) + " skip: acceptStack(" + item.name + "," + blockMin + ")=" + accepted + " < " + blockMin
-                    + " stock=" + (b.items ? b.items.get(item) : "?")
-                    + " cap=" + (block.itemCapacity || "?"));
+            if (b.acceptStack(item, 1, unit) <= 0) {
+                if (debugging) dlog(blockTag(b) + " skip(" + item.name + "): acceptStack=0 (buffer full / refused)");
                 return;
             }
 
-            const stock = b.items ? b.items.get(item) : 0;
-            if (debugging) dlog(blockTag(b) + " candidate: stock=" + stock + " accepted=" + accepted + " blockMin=" + blockMin);
+            if (debugging) dlog(blockTag(b) + " cand(" + item.name + "): stock=" + stock + " target=" + target);
             if (stock < bestStock) {
                 bestStock = stock;
                 bestB = b;
