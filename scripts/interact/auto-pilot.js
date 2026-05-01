@@ -310,6 +310,11 @@ function findCoreFetchForConsumer(unit, team) {
     // also asking.
     const debugging = dbg();
     let chosenBuild = null;
+    // Per-pass counters so the debug log gets one summary line per pass
+    // instead of N lines per turret per ammo. The previous per-skip
+    // dlog spam grew last_log.txt to 40 MB in one session.
+    const pass1 = { turrets: 0, disabled: 0, coreLow: 0, noRoom: 0, stocked: 0 };
+    let pass1Reason = null;
 
     if (turretsOn) {
         builds.each(b => {
@@ -319,22 +324,14 @@ function findCoreFetchForConsumer(unit, team) {
                 if (!(block instanceof ItemTurret)) return;
                 if (!consumerConfig.isEnabled(block)) return;
                 if (!block.ammoTypes) return;
+                pass1.turrets++;
                 let pick = null;
                 let pickReason = null;
                 let pickScore = -Infinity;
                 block.ammoTypes.each((item, ammo) => {
-                    if (!turretAmmoConfig.isEnabled(block, item)) {
-                        if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): ammo disabled in config");
-                        return;
-                    }
-                    if (core.items.get(item) < coreLimits.getLimit(item)) {
-                        if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): core stock=" + core.items.get(item) + " < limit=" + coreLimits.getLimit(item));
-                        return;
-                    }
-                    if (b.acceptStack(item, 1, probeUnit) <= 0) {
-                        if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): acceptStack=0");
-                        return;
-                    }
+                    if (!turretAmmoConfig.isEnabled(block, item)) { pass1.disabled++; return; }
+                    if (core.items.get(item) < coreLimits.getLimit(item)) { pass1.coreLow++; return; }
+                    if (b.acceptStack(item, 1, probeUnit) <= 0) { pass1.noRoom++; return; }
                     // Slider gate: skip if turret already has at least
                     // 'target' worth of this ammo loaded. Reading the
                     // actual ammo queue (getItemStock) — not items[],
@@ -345,10 +342,7 @@ function findCoreFetchForConsumer(unit, team) {
                     // drone refills constantly.
                     const target = consumerConfig.getTargetFill(b, item);
                     const stock = consumerConfig.getItemStock(b, item);
-                    if (stock >= target) {
-                        if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): stock=" + stock + ">=target=" + target);
-                        return;
-                    }
+                    if (stock >= target) { pass1.stocked++; return; }
                     // Score by ammo priority (dominant) and bullet
                     // damage (tiebreaker) — same shape as
                     // auto-fill.getBestAmmo. Without this, pass-1's
@@ -370,17 +364,25 @@ function findCoreFetchForConsumer(unit, team) {
                 if (pick) {
                     chosenItem = pick;
                     chosenBuild = b;
-                    if (debugging) dlog("fetch-pass1 " + blockTag(b) + " picked " + pick.name + " (" + pickReason + ")");
+                    pass1Reason = pickReason;
                 }
             } catch (e) {}
         });
+        if (debugging) {
+            dlog("pass1 turrets=" + pass1.turrets
+                + " skipped(D=" + pass1.disabled + ",L=" + pass1.coreLow
+                + ",F=" + pass1.noRoom + ",S=" + pass1.stocked + ")"
+                + " -> " + (chosenItem
+                    ? chosenItem.name + " for " + blockTag(chosenBuild) + " (" + pass1Reason + ")"
+                    : "no pick"));
+        }
         if (chosenItem) {
-            if (debugging) dlog("findCoreFetchForConsumer: pass-1 (turrets) -> " + chosenItem.name + " for " + (chosenBuild ? blockTag(chosenBuild) : "?"));
             return { x: core.x, y: core.y, b: core, item: chosenItem, expectsConsumer: false, kind: "core-fetch" };
         }
     }
 
     // Pass 2: non-turret consumers (crafters, generators, unit factories).
+    const pass2 = { consumers: 0 };
     builds.each(b => {
         if (chosenItem) return;
         try {
@@ -391,6 +393,7 @@ function findCoreFetchForConsumer(unit, team) {
             const ci = block.consumers.find(c =>
                 c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);
             if (!ci) return;
+            pass2.consumers++;
 
             // Same gate as findBestConsumer / auto-fill: only fetch when
             // this consumer's stock is below the user's fill target AND
@@ -437,11 +440,10 @@ function findCoreFetchForConsumer(unit, team) {
         } catch (e) {}
     });
 
-    if (!chosenItem) {
-        if (debugging) dlog("findCoreFetchForConsumer: nothing to fetch (both passes found 0)");
-        return null;
+    if (debugging) {
+        dlog("pass2 consumers=" + pass2.consumers + " -> " + (chosenItem ? chosenItem.name : "no pick"));
     }
-    if (debugging) dlog("findCoreFetchForConsumer: pass-2 (consumers) -> " + chosenItem.name);
+    if (!chosenItem) return null;
     return { x: core.x, y: core.y, b: core, item: chosenItem, expectsConsumer: false, kind: "core-fetch" };
 }
 
@@ -451,6 +453,7 @@ function findBestConsumer(unit, item, team) {
     let bestB = null;
     let bestStock = Infinity;
     const debugging = dbg();
+    const counts = { cands: 0, ammoOff: 0, stocked: 0, noRoom: 0 };
 
     builds.each(b => {
         try {
@@ -471,10 +474,7 @@ function findBestConsumer(unit, item, team) {
             // explicitly excluded from pyratite ammo, because the turret
             // still has acceptStack>0 (fresh empty slot) and beats any
             // crafter on bestStock.
-            if (isItemTurret && !turretAmmoConfig.isEnabled(block, item)) {
-                if (debugging) dlog(blockTag(b) + " skip(" + item.name + "): ammo disabled in turret config");
-                return;
-            }
+            if (isItemTurret && !turretAmmoConfig.isEnabled(block, item)) { counts.ammoOff++; return; }
 
             // The fill-pct slider is the user's "top up consumers to X%
             // of capacity" knob, so the right gate is "is this consumer
@@ -486,30 +486,23 @@ function findBestConsumer(unit, item, team) {
             // back ("shuttle" loop).
             const target = consumerConfig.getTargetFill(b, item);
             const stock = consumerConfig.getItemStock(b, item);
-            if (stock >= target) {
-                if (debugging) dlog(blockTag(b) + " skip(" + item.name + "): stock=" + stock + " >= target=" + target);
-                return;
-            }
-            if (b.acceptStack(item, 1, unit) <= 0) {
-                if (debugging) dlog(blockTag(b) + " skip(" + item.name + "): acceptStack=0 (buffer full / refused)");
-                return;
-            }
+            if (stock >= target) { counts.stocked++; return; }
+            if (b.acceptStack(item, 1, unit) <= 0) { counts.noRoom++; return; }
 
-            if (debugging) dlog(blockTag(b) + " cand(" + item.name + "): stock=" + stock + " target=" + target);
+            counts.cands++;
             if (stock < bestStock) {
                 bestStock = stock;
                 bestB = b;
             }
-        } catch (e) {
-            if (debugging) dlog(blockTag(b) + " error: " + e);
-        }
+        } catch (e) {}
     });
 
-    if (!bestB) {
-        if (debugging) dlog("findBestConsumer(" + item.name + "): no candidate");
-        return null;
+    if (debugging) {
+        dlog("findBestConsumer(" + item.name + ") cands=" + counts.cands
+            + " skipped(A=" + counts.ammoOff + ",S=" + counts.stocked + ",F=" + counts.noRoom + ")"
+            + " -> " + (bestB ? blockTag(bestB) + " stock=" + bestStock : "none"));
     }
-    if (debugging) dlog("findBestConsumer(" + item.name + ") -> " + blockTag(bestB) + " stock=" + bestStock);
+    if (!bestB) return null;
     return { x: bestB.x, y: bestB.y, b: bestB, item: item, expectsConsumer: true };
 }
 

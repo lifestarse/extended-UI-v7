@@ -192,6 +192,7 @@ function computeFetchAmount(item, team, player) {
 
     const turretsOn = Core.settings.getBool("eui-auto-fill-turrets", true);
     let total = 0;
+    const counts = { added: 0, stocked: 0, ammoOff: 0, noRoom: 0, wouldOverflow: 0 };
 
     const visit = b => {
         if (total >= droneCap) return;
@@ -212,10 +213,7 @@ function computeFetchAmount(item, team, player) {
                 const target = consumerConfig.getTargetFill(b, item);
                 if (target <= 0) return;
                 const stock = consumerConfig.getItemStock(b, item);
-                if (stock >= target) {
-                    if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): stock=" + stock + ">=target=" + target);
-                    return;
-                }
+                if (stock >= target) { counts.stocked++; return; }
                 // Top up to the smart-batch target so the buffer
                 // drains cleanly. need = clean batch size minus what
                 // the consumer already holds.
@@ -229,10 +227,7 @@ function computeFetchAmount(item, team, player) {
                 // a disabled (unchecked) ammo type isn't summed into the
                 // fetch — otherwise drone fetches an item it'll refuse
                 // to deliver to this turret (and may dump back to core).
-                if (!turretAmmoConfig.isEnabled(block, item)) {
-                    if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): ammo disabled in turret config");
-                    return;
-                }
+                if (!turretAmmoConfig.isEnabled(block, item)) { counts.ammoOff++; return; }
                 // Slider gate via real ammo stock — items[] is always 0
                 // for turrets, so without getItemStock the slider is
                 // effectively ignored and drone refills 1 unit per
@@ -240,22 +235,16 @@ function computeFetchAmount(item, team, player) {
                 const tTarget = consumerConfig.getTargetFill(b, item);
                 if (tTarget <= 0) return;
                 const tStock = consumerConfig.getItemStock(b, item);
-                if (tStock >= tTarget) {
-                    if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): stock=" + tStock + ">=target=" + tTarget);
-                    return;
-                }
+                if (tStock >= tTarget) { counts.stocked++; return; }
                 need = b.acceptStack(item, droneCap, unit);
-                if (need <= 0) {
-                    if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): acceptStack=0");
-                    return;
-                }
+                if (need <= 0) { counts.noRoom++; return; }
             }
             if (need <= 0) return;
             if (total + need <= droneCap) {
                 total += need;
-                if (debugging) dlog("computeFetch " + bTag(b) + " add(" + item.name + "): need=" + need + " total=" + total + "/" + droneCap);
-            } else if (debugging) {
-                dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): need=" + need + " wouldn't fit (total=" + total + " + need > droneCap=" + droneCap + ")");
+                counts.added++;
+            } else {
+                counts.wouldOverflow++;
             }
         } catch (e) {}
     };
@@ -272,8 +261,10 @@ function computeFetchAmount(item, team, player) {
     }
 
     if (debugging) {
-        if (total > 0) dlog("computeFetchAmount(" + item.name + "): sum=" + total + " (drone cap=" + droneCap + ")");
-        else dlog("computeFetchAmount(" + item.name + "): sum=0, fallback to 999");
+        dlog("computeFetchAmount(" + item.name + ") added=" + counts.added
+            + " skipped(S=" + counts.stocked + ",A=" + counts.ammoOff
+            + ",F=" + counts.noRoom + ",O=" + counts.wouldOverflow + ")"
+            + " -> " + (total > 0 ? total + "/" + droneCap : "0 (fallback 999)"));
     }
     return total > 0 ? total : 999;
 }
