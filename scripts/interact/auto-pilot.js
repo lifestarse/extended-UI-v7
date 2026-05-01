@@ -6,6 +6,7 @@ const coreLimits = require("extended-ui/interact/core-limits");
 const playerBusy = require("extended-ui/interact/player-busy");
 const taskPriority = require("extended-ui/interact/task-priority");
 const consumerConfig = require("extended-ui/interact/consumer-config");
+const turretAmmoConfig = require("extended-ui/interact/turret-ammo-config");
 
 const RESCAN_TICKS = 30;
 const ARRIVE_PADDING = Vars.tilesize * 2;
@@ -152,6 +153,10 @@ function pickTarget(unit, team) {
             const drain = storageDrain.findDrainSource(team);
             if (drain) candidates.push({ task: "storage-drain-fetch", target: drain });
         }
+        if (fillOn && coreOn) {
+            const consumerFetch = findCoreFetchForConsumer(unit, team);
+            if (consumerFetch) candidates.push({ task: "consumer-core-fetch", target: consumerFetch });
+        }
         if (factoryOn || drillOn) {
             const p = findBestProducer(unit, team, factoryOn, drillOn, null);
             if (p) {
@@ -216,6 +221,89 @@ function findCoreFetchForStorage(unit, team) {
     });
     if (!chosen) return null;
     return { x: core.x, y: core.y, b: core, item: chosen, expectsConsumer: false, kind: "core-fetch" };
+}
+
+// Pick an item the drone should fetch from the core to feed a consumer
+// (factory or item-turret). Without this trip the autopilot has no path
+// from "drone empty" to "drone carries an input the core supplies",
+// which is why core->factory and core->turret refused to work.
+function findCoreFetchForConsumer(unit, team) {
+    const core = Vars.player.closestCore();
+    if (!core || !core.items) return null;
+    const builds = teamBuildings(team);
+    if (!builds) return null;
+    const turretsOn = Core.settings.getBool("eui-auto-fill-turrets", true);
+    const probeUnit = Vars.player.unit();
+
+    let chosenItem = null;
+    builds.each(b => {
+        if (chosenItem) return;
+        try {
+            const block = b.block;
+            if (!block || !consumerConfig.isEnabled(block)) return;
+
+            // Item turret with empty ammo: pick best ammo type the core
+            // supplies and the turret can actually receive.
+            if (block instanceof ItemTurret) {
+                if (!turretsOn) return;
+                if (!b.ammo || !b.ammo.isEmpty()) return;
+                if (!block.ammoTypes) return;
+                let pick = null;
+                block.ammoTypes.each((item, ammo) => {
+                    if (pick) return;
+                    if (!turretAmmoConfig.isEnabled(block, item)) return;
+                    if (core.items.get(item) < coreLimits.getLimit(item)) return;
+                    if (b.acceptStack(item, 1, probeUnit) <= 0) return;
+                    pick = item;
+                });
+                if (pick) chosenItem = pick;
+                return;
+            }
+
+            // Generic consumers (crafters, generators, unit factories).
+            if (!block.consumers) return;
+            const ci = block.consumers.find(c =>
+                c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);
+            if (!ci) return;
+
+            const minAmount = consumerConfig.getMinAmountFor(block);
+            const probe = Math.max(minAmount, 5);
+
+            if (ci instanceof ConsumeItems) {
+                for (let i = 0; i < ci.items.length; i++) {
+                    const item = ci.items[i].item;
+                    if (core.items.get(item) < coreLimits.getLimit(item)) continue;
+                    if (b.acceptStack(item, probe, probeUnit) < minAmount) continue;
+                    chosenItem = item;
+                    return;
+                }
+            } else if (ci instanceof ConsumeItemFilter) {
+                Vars.content.items().each(item => {
+                    if (chosenItem) return;
+                    if (!ci.filter.get(item)) return;
+                    try { if (item == Items.blastCompound) return; } catch (e) {}
+                    if (core.items.get(item) < coreLimits.getLimit(item)) return;
+                    if (b.acceptStack(item, probe, probeUnit) < minAmount) return;
+                    chosenItem = item;
+                });
+            } else {
+                // ConsumeItemDynamic — UnitFactory currentPlan path.
+                if (block instanceof UnitFactory && b.currentPlan != -1) {
+                    const reqs = block.plans.get(b.currentPlan).requirements;
+                    for (let i = 0; i < reqs.length; i++) {
+                        const item = reqs[i].item;
+                        if (core.items.get(item) < coreLimits.getLimit(item)) continue;
+                        if (b.acceptStack(item, probe, probeUnit) < minAmount) continue;
+                        chosenItem = item;
+                        return;
+                    }
+                }
+            }
+        } catch (e) {}
+    });
+
+    if (!chosenItem) return null;
+    return { x: core.x, y: core.y, b: core, item: chosenItem, expectsConsumer: false, kind: "core-fetch" };
 }
 
 function findBestConsumer(unit, item, team) {

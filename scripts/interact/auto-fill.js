@@ -125,9 +125,15 @@ Events.run(Trigger.update, () => {
 function getBestAmmo(turret, core) {
     let best = null;
     let bestScore = -Infinity;
+    const probeUnit = Vars.player.unit();
     turret.ammoTypes.each((item, ammo) => {
         if (!turretAmmoConfig.isEnabled(turret, item)) return;
         if (core.items.get(item) < coreLimits.getLimit(item)) return;
+        // Skip ammo the turret can't actually receive — without this,
+        // multi-ammo turrets (e.g. double turret) tell us "I want
+        // graphite" even when their graphite slot is full, the drone
+        // fetches from core, can't deliver, dumps back, and loops.
+        if (turret.acceptStack(item, 1, probeUnit) <= 0) return;
         const damage = ammo.damage + ammo.splashDamage;
         const priority = turretAmmoConfig.getPriority(turret, item);
         // Priority dominates when set; damage breaks ties (and is the

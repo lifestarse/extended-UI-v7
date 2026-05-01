@@ -64,6 +64,7 @@ function resetStorageSettings() {
 function resetTaskPrioritySettings() {
     for (let i = 0; i < taskPriority.TASKS.length; i++) {
         taskPriority.reset(taskPriority.TASKS[i].id);
+        Core.settings.remove(taskPriority.ENABLED_PREFIX + taskPriority.TASKS[i].id);
     }
     for (let i = 0; i < consumerConfig.CATEGORIES.length; i++) {
         Core.settings.remove("eui-consumer-cat-expanded-" + consumerConfig.CATEGORIES[i]);
@@ -189,6 +190,9 @@ Events.on(EventType.ClientLoadEvent, () => {
         // SettingsTable's auto-rebuild slots them in BEFORE the trailing
         // "reset to defaults" button. Falls back to a plain .button() append
         // if the Setting subclass can't be created on this Mindustry build.
+        // Cells use .left() so the buttons line up under the same flush-left
+        // column as the checkPref / sliderPref labels above instead of
+        // floating in the middle of the pane.
         function pushButton(labelKey, dialog) {
             try {
                 const Setting = SettingsMenuDialog.SettingsTable.Setting;
@@ -196,7 +200,7 @@ Events.on(EventType.ClientLoadEvent, () => {
                     add: function(table) {
                         table.row();
                         table.button(Core.bundle.get(labelKey), Icon.box, () => dialog.show())
-                            .width(360).height(50).pad(8);
+                            .width(360).height(50).pad(8).left();
                         table.row();
                     }
                 }, "eui-btn-" + labelKey.replace(/\./g, "-"));
@@ -204,7 +208,7 @@ Events.on(EventType.ClientLoadEvent, () => {
             } catch (e) {
                 contentTable.row();
                 contentTable.button(Core.bundle.get(labelKey), Icon.box, () => dialog.show())
-                    .width(360).height(50).pad(8);
+                    .width(360).height(50).pad(8).left();
             }
         }
         pushButton("eui.core-limits.open", coreLimitsDialog);
@@ -331,6 +335,49 @@ function buildCollectTargetsDialog() {
         rebuild();
     });
 
+    function listFactories() {
+        const factories = [];
+        Vars.content.blocks().each(block => {
+            if (block instanceof GenericCrafter
+                && block.outputItems != null
+                && block.outputItems.length > 0
+                && !block.isHidden()) {
+                factories.push(block);
+            }
+        });
+        factories.sort((a, b) => a.id - b.id);
+        return factories;
+    }
+
+    function listDrillItems() {
+        const items = [];
+        Vars.content.items().each(item => items.push(item));
+        items.sort((a, b) => a.id - b.id);
+        return items;
+    }
+
+    function allEnabled() {
+        const factories = listFactories();
+        for (let i = 0; i < factories.length; i++) {
+            if (!collectConfig.isFactoryEnabled(factories[i])) return false;
+        }
+        const items = listDrillItems();
+        for (let i = 0; i < items.length; i++) {
+            if (!collectConfig.isDrillItemEnabled(items[i])) return false;
+        }
+        return true;
+    }
+
+    function setAll(value) {
+        listFactories().forEach(b => collectConfig.setFactoryEnabled(b, value));
+        listDrillItems().forEach(it => collectConfig.setDrillItemEnabled(it, value));
+    }
+
+    dialog.buttons.button(Core.bundle.get("eui.collect-targets.toggle-all"), () => {
+        setAll(!allEnabled());
+        rebuild();
+    }).size(240, 60);
+
     let listTable = null;
     dialog.cont.add(Core.bundle.get("eui.collect-targets.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
     dialog.cont.row();
@@ -343,16 +390,7 @@ function buildCollectTargetsDialog() {
         listTable.add(Core.bundle.get("eui.collect-targets.factories")).colspan(3).left().pad(8);
         listTable.row();
 
-        const factories = [];
-        Vars.content.blocks().each(block => {
-            if (block instanceof GenericCrafter
-                && block.outputItems != null
-                && block.outputItems.length > 0
-                && !block.isHidden()) {
-                factories.push(block);
-            }
-        });
-        factories.sort((a, b) => a.id - b.id);
+        const factories = listFactories();
 
         if (factories.length === 0) {
             listTable.add(Core.bundle.get("eui.collect-targets.no-factories")).colspan(3).left().pad(8);
@@ -366,9 +404,7 @@ function buildCollectTargetsDialog() {
         listTable.add(Core.bundle.get("eui.collect-targets.drills")).colspan(3).left().pad(8);
         listTable.row();
 
-        const items = [];
-        Vars.content.items().each(item => items.push(item));
-        items.sort((a, b) => a.id - b.id);
+        const items = listDrillItems();
         for (let i = 0; i < items.length; i++) {
             addDrillItemRow(listTable, items[i]);
         }
@@ -526,7 +562,11 @@ function buildTaskPriorityDialog() {
 
     function addTaskRow(parent, task) {
         parent.table(ROW_BG, row => {
-            row.add(Core.bundle.get(task.bundleKey)).left().growX().width(360).pad(4);
+            row.check("", taskPriority.isEnabled(task.id), v => {
+                taskPriority.setEnabled(task.id, v);
+            }).pad(4).tooltip(Core.bundle.get("eui.task-priority.enable-tooltip"));
+
+            row.add(Core.bundle.get(task.bundleKey)).left().growX().width(320).pad(4);
 
             const fieldCell = row.field(taskPriority.get(task.id) + "", text => {
                 const v = parseInt(text);
