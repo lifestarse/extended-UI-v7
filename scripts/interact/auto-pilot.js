@@ -98,6 +98,13 @@ function isStale(target, unit) {
     if (stack.amount > 0 && stack.item) {
         if (!target.expectsConsumer) return true;
         if (target.item !== stack.item) return true;
+        // If the user disabled this ammo on this turret while we were
+        // en route, drop the target — otherwise drone keeps flying to
+        // a turret it shouldn't be feeding.
+        try {
+            if (target.b.block instanceof ItemTurret
+                && !turretAmmoConfig.isEnabled(target.b.block, stack.item)) return true;
+        } catch (e) {}
         // Stale once the consumer is at or above the user's fill target,
         // OR if it physically can't accept anything right now (full
         // buffer for this item). Note: NOT gated on "drone could deliver
@@ -438,6 +445,17 @@ function findBestConsumer(unit, item, team) {
                 if (!wantsItem) return;
             }
             if (!consumerConfig.isEnabled(block)) return;
+            // Per-ammo whitelist: a turret with this specific ammo type
+            // unchecked must NEVER be chosen as a delivery target, even
+            // if the block-level isEnabled is on. Without this gate the
+            // drone happily dumps pyratite into a spectre that the user
+            // explicitly excluded from pyratite ammo, because the turret
+            // still has acceptStack>0 (fresh empty slot) and beats any
+            // crafter on bestStock.
+            if (isItemTurret && !turretAmmoConfig.isEnabled(block, item)) {
+                if (debugging) dlog(blockTag(b) + " skip(" + item.name + "): ammo disabled in turret config");
+                return;
+            }
 
             // The fill-pct slider is the user's "top up consumers to X%
             // of capacity" knob, so the right gate is "is this consumer

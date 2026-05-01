@@ -70,14 +70,25 @@ Events.run(Trigger.update, () => {
         // user set fillPct=100 % meaning "top up to full").
         const wantsItem = stack.amount > 0 && stack.item != null;
         if (wantsItem) {
-            const target = consumerConfig.getTargetFill(b, stack.item);
-            const stock = b.items ? b.items.get(stack.item) : 0;
-            const accepted = b.acceptStack(stack.item, stack.amount, player.unit());
-            if (stock < target && accepted > 0) {
-                if (dbg()) dlog("range-iter " + bTag(b) + " wants " + stack.item.name + " (stock=" + stock + " target=" + target + " accepted=" + accepted + ")");
-                request = b;
-                requestPriority = blockPriority;
-                return;
+            // Per-ammo whitelist: a turret with this specific ammo
+            // unchecked must NEVER be a delivery target. Without this
+            // gate the drone happily dumps pyratite into a spectre that
+            // had pyratite explicitly disabled, because acceptStack still
+            // returns >0 (slot is empty) and stock<target still holds.
+            if (isItemTurret && !turretAmmoConfig.isEnabled(block, stack.item)) {
+                // fall through — block can't be the delivery target,
+                // but we still let the fetch path below decide whether
+                // to request a different ammo for this turret.
+            } else {
+                const target = consumerConfig.getTargetFill(b, stack.item);
+                const stock = b.items ? b.items.get(stack.item) : 0;
+                const accepted = b.acceptStack(stack.item, stack.amount, player.unit());
+                if (stock < target && accepted > 0) {
+                    if (dbg()) dlog("range-iter " + bTag(b) + " wants " + stack.item.name + " (stock=" + stock + " target=" + target + " accepted=" + accepted + ")");
+                    request = b;
+                    requestPriority = blockPriority;
+                    return;
+                }
             }
         }
 
@@ -214,6 +225,14 @@ function computeFetchAmount(item, team, player) {
                 // (no race against external feeds). need = acceptStack
                 // room so the drone fetches exactly what fits.
                 if (!b.ammo) return;
+                // Per-ammo whitelist: respect the turret-ammo config so
+                // a disabled (unchecked) ammo type isn't summed into the
+                // fetch — otherwise drone fetches an item it'll refuse
+                // to deliver to this turret (and may dump back to core).
+                if (!turretAmmoConfig.isEnabled(block, item)) {
+                    if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): ammo disabled in turret config");
+                    return;
+                }
                 if (consumerConfig.turretHasItemAmmo(b, item)) {
                     if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): turret has this ammo loaded");
                     return;
