@@ -92,7 +92,7 @@ function isStale(target, unit) {
         // Same pickup-threshold gate as findBestProducer / findTopUpTarget:
         // once stock drops below it the drone moves on to a fuller
         // producer (or back to delivery) instead of trickle-pulling.
-        const pickupThr = collectConfig.getPickupThreshold(target.b.block);
+        const pickupThr = collectConfig.getPickupThreshold(target.b.block, target.item);
         return target.b.items.get(target.item) < pickupThr;
     }
     if (stack.amount > 0 && stack.item) {
@@ -430,8 +430,9 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
             // pickup-threshold slider. For a top-up trip we'd otherwise
             // strand the drone trickle-pulling 1 unit at a time from a
             // slow drill while a fully-stocked drill nearby is ignored.
-            const pickupThr = collectConfig.getPickupThreshold(block);
-
+            // Threshold is per-item: GenericCrafter outputs cap below
+            // itemCapacity (cap - craftAmount), so it must be computed
+            // against the specific output, not the block as a whole.
             if (factoryOn && block instanceof GenericCrafter
                 && block.outputItems != null
                 && collectConfig.isFactoryEnabled(block)) {
@@ -440,6 +441,7 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
                     const it = block.outputItems[i].item;
                     if (requireItem && it !== requireItem) continue;
                     const stock = b.items.get(it);
+                    const pickupThr = collectConfig.getPickupThreshold(block, it);
                     if (stock >= pickupThr && stock > bestScore) {
                         bestScore = stock;
                         bestB = b;
@@ -455,6 +457,7 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
                 if (requireItem && dom !== requireItem) return;
                 if (!collectConfig.isDrillItemEnabled(dom)) return;
                 const stock = b.items.get(dom);
+                const pickupThr = collectConfig.getPickupThreshold(block, dom);
                 if (stock >= pickupThr && stock > bestScore) {
                     bestScore = stock;
                     bestB = b;

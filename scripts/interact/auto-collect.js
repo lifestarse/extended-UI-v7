@@ -67,10 +67,9 @@ Events.run(Trigger.update, () => {
         if (factoryEnabled && block instanceof GenericCrafter && collectConfig.isFactoryEnabled(block)) {
             const out = block.outputItems;
             if (out && b.items) {
-                const thr = collectConfig.getPickupThreshold(block);
                 for (let i = 0; i < out.length; i++) {
                     const it = out[i].item;
-                    if (b.items.get(it) >= thr) {
+                    if (b.items.get(it) >= collectConfig.getPickupThreshold(block, it)) {
                         target = b;
                         targetItem = it;
                         return;
@@ -82,7 +81,7 @@ Events.run(Trigger.update, () => {
         if (!target && drillEnabled && block instanceof Drill) {
             const dom = b.dominantItem;
             if (dom != null && b.items && collectConfig.isDrillItemEnabled(dom)
-                && b.items.get(dom) >= collectConfig.getPickupThreshold(block)) {
+                && b.items.get(dom) >= collectConfig.getPickupThreshold(block, dom)) {
                 target = b;
                 targetItem = dom;
             }
@@ -107,10 +106,9 @@ function findTopUpTarget(team, player, unit, item, factoryEnabled, drillEnabled)
         const block = b.tile.block();
         if (factoryEnabled && block instanceof GenericCrafter && collectConfig.isFactoryEnabled(block)
             && block.outputItems && b.items) {
-            const thr = collectConfig.getPickupThreshold(block);
             for (let i = 0; i < block.outputItems.length; i++) {
                 if (block.outputItems[i].item !== item) continue;
-                if (b.items.get(item) >= thr) {
+                if (b.items.get(item) >= collectConfig.getPickupThreshold(block, item)) {
                     target = b;
                     return;
                 }
@@ -119,7 +117,7 @@ function findTopUpTarget(team, player, unit, item, factoryEnabled, drillEnabled)
         if (!target && drillEnabled && block instanceof Drill && b.items
             && b.dominantItem === item
             && collectConfig.isDrillItemEnabled(item)
-            && b.items.get(item) >= collectConfig.getPickupThreshold(block)) {
+            && b.items.get(item) >= collectConfig.getPickupThreshold(block, item)) {
             target = b;
         }
     });
