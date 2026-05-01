@@ -96,25 +96,21 @@ Events.run(Trigger.update, () => {
 });
 
 function findTopUpTarget(team, player, unit, item, factoryEnabled, drillEnabled) {
-    // Top-up reaches here when the drone already carries `item` and is
-    // standing at a same-item producer. Drills always get pulled from on
-    // any positive stock — the drone is intentionally waiting on the
-    // mining cycle. Factories use the same drip-feed guard as auto-fill:
-    // with a substantial stack already in hand, refuse to trickle 2 at a
-    // time from a slow factory; with only a leftover scrap, take whatever
-    // is on offer.
+    // Top-up only pulls from producers whose current stock is at or above
+    // the user-configured pickup threshold (collect % slider). Otherwise
+    // a drone carrying a partial stack would trickle-pull 1 unit at a
+    // time from any source that just dripped a single item, ignoring
+    // fully-stocked producers nearby.
     let target = null;
-    const stack = unit.stack;
     Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, b => {
         if (target) return;
         const block = b.tile.block();
         if (factoryEnabled && block instanceof GenericCrafter && collectConfig.isFactoryEnabled(block)
             && block.outputItems && b.items) {
-            const blockMin = consumerConfig.getMinAmountFor(block, item);
-            const factoryThr = stack.amount >= blockMin ? blockMin : 1;
+            const thr = collectConfig.getPickupThreshold(block);
             for (let i = 0; i < block.outputItems.length; i++) {
                 if (block.outputItems[i].item !== item) continue;
-                if (b.items.get(item) >= factoryThr) {
+                if (b.items.get(item) >= thr) {
                     target = b;
                     return;
                 }
@@ -123,7 +119,7 @@ function findTopUpTarget(team, player, unit, item, factoryEnabled, drillEnabled)
         if (!target && drillEnabled && block instanceof Drill && b.items
             && b.dominantItem === item
             && collectConfig.isDrillItemEnabled(item)
-            && b.items.get(item) > 0) {
+            && b.items.get(item) >= collectConfig.getPickupThreshold(block)) {
             target = b;
         }
     });

@@ -70,25 +70,19 @@ function isStale(target, unit) {
         if (stack.amount === 0 || stack.item !== target.item) return true;
         const cap = unit.type ? unit.type.itemCapacity : 0;
         if (cap > 0 && stack.amount >= cap) return true;
-        // Stay put even when the drill just emptied — it'll mine more.
-        // Only abandon if the producer can never give us this item again:
-        // a drill whose dominantItem changed (vein depleted / tile swap)
-        // or a non-drill producer below the drip-feed threshold (so the
-        // drone moves on to a faster producer instead of pulling 2 each
-        // regen cycle from one slow factory).
-        if (target.b.block instanceof Drill) {
-            if (target.b.dominantItem !== target.item) return true;
-            return false;
-        }
+        // Drill vein depleted / tile swap — abandon.
+        if (target.b.block instanceof Drill && target.b.dominantItem !== target.item) return true;
         if (!target.b.items) return true;
-        const blockMin = consumerConfig.getMinAmountFor(target.b.block);
-        const thr = stack.amount >= blockMin ? blockMin : 1;
-        return target.b.items.get(target.item) < thr;
+        // Same pickup-threshold gate as findBestProducer / findTopUpTarget:
+        // once stock drops below it the drone moves on to a fuller
+        // producer (or back to delivery) instead of trickle-pulling.
+        const pickupThr = collectConfig.getPickupThreshold(target.b.block);
+        return target.b.items.get(target.item) < pickupThr;
     }
     if (stack.amount > 0 && stack.item) {
         if (!target.expectsConsumer) return true;
         if (target.item !== stack.item) return true;
-        const blockMin = consumerConfig.getMinAmountFor(target.b.block, stack.item);
+        const blockMin = consumerConfig.getMinAmountFor(target.b.block);
         return target.b.acceptStack(stack.item, blockMin, unit) < blockMin;
     }
     if (target.expectsConsumer) return true;
@@ -280,30 +274,27 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
     // partial-delivered to a factory parks at the consumer with 3 of an
     // item because every drill is just under the user's collect threshold.
     const topUp = requireItem != null;
-    const stack = unit.stack;
-    // Mirror of the auto-fill drip-feed guard. Per-block batch size
-    // scales with each producer's capacity (same fill-pct slider as
-    // findBestConsumer / auto-fill). With a substantial stack the drone
-    // skips slow producers; with a small leftover any positive stock is
-    // taken so the drone doesn't get stranded.
 
     builds.each(b => {
         try {
             const block = b.block;
             if (!block) return;
 
+            // Both top-up and from-empty collection respect the user's
+            // pickup-threshold slider. For a top-up trip we'd otherwise
+            // strand the drone trickle-pulling 1 unit at a time from a
+            // slow drill while a fully-stocked drill nearby is ignored.
+            const pickupThr = collectConfig.getPickupThreshold(block);
+
             if (factoryOn && block instanceof GenericCrafter
                 && block.outputItems != null
                 && collectConfig.isFactoryEnabled(block)) {
                 if (!b.items) return;
-                const blockMin = consumerConfig.getMinAmountFor(block);
-                const factoryTopUpThr = stack.amount >= blockMin ? blockMin : 1;
-                const thr = topUp ? factoryTopUpThr : collectConfig.getPickupThreshold(block);
                 for (let i = 0; i < block.outputItems.length; i++) {
                     const it = block.outputItems[i].item;
                     if (requireItem && it !== requireItem) continue;
                     const stock = b.items.get(it);
-                    if (stock >= thr && stock > bestScore) {
+                    if (stock >= pickupThr && stock > bestScore) {
                         bestScore = stock;
                         bestB = b;
                         bestItem = it;
@@ -318,13 +309,7 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
                 if (requireItem && dom !== requireItem) return;
                 if (!collectConfig.isDrillItemEnabled(dom)) return;
                 const stock = b.items.get(dom);
-                // Top-up: keep the drill as a candidate even at stock=0.
-                // The drone is committed to the item; if the drill just
-                // emptied (drone took the last unit) the right move is to
-                // wait for the next mining cycle here, not bounce off to
-                // deliver one item to a faraway consumer.
-                const thr = topUp ? 0 : collectConfig.getPickupThreshold(block);
-                if (stock >= thr && stock > bestScore) {
+                if (stock >= pickupThr && stock > bestScore) {
                     bestScore = stock;
                     bestB = b;
                     bestItem = dom;
