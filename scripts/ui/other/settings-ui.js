@@ -182,6 +182,7 @@ Events.on(EventType.ClientLoadEvent, () => {
         checkPref("eui-auto-pilot", false);
         sliderPref("eui-steering-cooldown-sec", 2, 0, 10, 1, i => i + " s");
         sliderPref("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
+        checkPref("eui-debug-autopilot", false);
         if (!Vars.mobile) {
             checkPref("eui-DragBlock", false);
             checkPref("eui-DragPathfind", false);

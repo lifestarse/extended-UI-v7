@@ -14,6 +14,18 @@ const ARRIVE_PADDING = Vars.tilesize * 2;
 let cached = null;
 let scanTick = RESCAN_TICKS;
 
+// Debug logging — gated on the eui-debug-autopilot setting. Logs hit
+// every time pickTarget runs (≈ once per RESCAN_TICKS = 0.5s), so
+// they're noisy but only fire while the toggle is on. When the user
+// can't tell why the drone ignores a particular consumer, switching
+// this on for a few seconds and grepping last_log.txt for the block
+// name shows exactly which filter rejected it.
+function dbg() { return Core.settings.getBool("eui-debug-autopilot", false); }
+function dlog(s) { if (dbg()) try { print("[eui-ap] " + s); } catch (e) {} }
+function blockTag(b) {
+    try { return b.block.name + "@" + b.tile.x + "," + b.tile.y; } catch (e) { return "?"; }
+}
+
 // Other modules (auto-fill, auto-collect) consult this so they don't dump
 // the drone's stack into the core just because the autopilot's path took
 // it through core range -- only "core-dump" / "core-fetch" trips should
@@ -326,45 +338,55 @@ function findBestConsumer(unit, item, team) {
     if (!builds) return null;
     let bestB = null;
     let bestStock = Infinity;
+    const debugging = dbg();
 
     builds.each(b => {
         try {
             const block = b.block;
             if (!block) return;
-            // ItemTurrets accept ammo through their ammoTypes map, not
-            // through the consumers[] array — so the ConsumeItems-style
-            // filter we use for factories misses them. Treat any
-            // ItemTurret that actually accepts the drone's stack item as
-            // a valid consumer-deliver target so the autopilot can route
-            // ammo (otherwise the drone fetches at the core, finds no
-            // valid consumer-deliver candidate, and dumps the ammo back
-            // in — the double-turret graphite loop).
             const isItemTurret = block instanceof ItemTurret;
             if (!isItemTurret) {
-                if (!block.consumers) return;
+                if (!block.consumers) {
+                    if (debugging) dlog(blockTag(b) + " skip: no consumers field");
+                    return;
+                }
                 const wantsItem = block.consumers.find(c =>
                     c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);
-                if (!wantsItem) return;
+                if (!wantsItem) {
+                    if (debugging) dlog(blockTag(b) + " skip: no ConsumeItems-style consumer (consumers.size=" + block.consumers.size + ")");
+                    return;
+                }
             }
-            // Per-block batch threshold: scales with the consumer's own
-            // capacity (ammo capacity for turrets) so a 10-cap factory
-            // and a 100-cap one share the same fill-percent slider.
-            // Clamped to the drone's own capacity — a high-cap consumer
-            // (multi-press cap=30) would otherwise demand more room than
-            // a small drone can ever deliver in one trip.
+            if (!consumerConfig.isEnabled(block)) {
+                if (debugging) dlog(blockTag(b) + " skip: disabled in consumer-config");
+                return;
+            }
             const droneCap = (unit.type && unit.type.itemCapacity) || 0;
             const blockMin = consumerConfig.getDeliverableMinFor(block, item, droneCap);
-            if (b.acceptStack(item, blockMin, unit) < blockMin) return;
+            const accepted = b.acceptStack(item, blockMin, unit);
+            if (accepted < blockMin) {
+                if (debugging) dlog(blockTag(b) + " skip: acceptStack(" + item.name + "," + blockMin + ")=" + accepted + " < " + blockMin
+                    + " stock=" + (b.items ? b.items.get(item) : "?")
+                    + " cap=" + (block.itemCapacity || "?"));
+                return;
+            }
 
             const stock = b.items ? b.items.get(item) : 0;
+            if (debugging) dlog(blockTag(b) + " candidate: stock=" + stock + " accepted=" + accepted + " blockMin=" + blockMin);
             if (stock < bestStock) {
                 bestStock = stock;
                 bestB = b;
             }
-        } catch (e) {}
+        } catch (e) {
+            if (debugging) dlog(blockTag(b) + " error: " + e);
+        }
     });
 
-    if (!bestB) return null;
+    if (!bestB) {
+        if (debugging) dlog("findBestConsumer(" + item.name + "): no candidate");
+        return null;
+    }
+    if (debugging) dlog("findBestConsumer(" + item.name + ") -> " + blockTag(bestB) + " stock=" + bestStock);
     return { x: bestB.x, y: bestB.y, b: bestB, item: item, expectsConsumer: true };
 }
 
