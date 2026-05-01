@@ -50,17 +50,6 @@ exports.getMinAmountFor = function(block, item) {
     return Math.max(1, Math.floor(cap * exports.getFillPct() / 100));
 }
 
-// Same as getMinAmountFor but never exceeds the drone's own item
-// capacity. Without this clamp a high-cap consumer (multi-press,
-// silicon crucible — both cap=30) requires more room than a small
-// drone can ever deliver in one trip (Mono cap=4, Poly cap=12), so
-// the autopilot's findBestConsumer / auto-fill loop never matches it
-// and the drone never visits.
-exports.getDeliverableMinFor = function(block, item, droneCap) {
-    const v = exports.getMinAmountFor(block, item);
-    return (droneCap > 0 && v > droneCap) ? droneCap : v;
-}
-
 // Item-equivalent capacity for a block — handles ItemTurret ammo math
 // the same way getMinAmountFor does, but returns the raw cap instead
 // of the percentage-derived batch size.
