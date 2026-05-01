@@ -62,7 +62,7 @@ Events.run(Trigger.update, () => {
         // user set fillPct=100 % meaning "top up to full").
         const wantsItem = stack.amount > 0 && stack.item != null;
         if (wantsItem) {
-            const target = consumerConfig.getTargetFill(block, stack.item);
+            const target = consumerConfig.getTargetFill(b, stack.item);
             const stock = b.items ? b.items.get(stack.item) : 0;
             const accepted = b.acceptStack(stack.item, stack.amount, player.unit());
             if (stock < target && accepted > 0) {
@@ -147,7 +147,7 @@ function getBestAmmo(turret, core) {
 // the core instead of topping them up.
 function consumerWantsItem(build, item) {
     try {
-        const target = consumerConfig.getTargetFill(build.block, item);
+        const target = consumerConfig.getTargetFill(build, item);
         const stock = build.items ? build.items.get(item) : 0;
         if (stock >= target) return false;
         return build.acceptStack(item, 1, Vars.player.unit()) > 0;

@@ -96,15 +96,61 @@ exports.getCapacityFor = function(block, item) {
     return block.itemCapacity || 0;
 }
 
-// Stock level the drone is supposed to keep this consumer at:
-// floor(cap * fillPct / 100). Drone visits when current stock falls
-// below this; isStale fires when stock climbs back to or above it.
-// Returns 0 when the block has no per-item capacity (doesn't consume
-// the item); callers' `stock >= target` skip catches that cleanly.
-exports.getTargetFill = function(block, item) {
+// Per-craft amount of `item` this build needs in stock to actually
+// run. ConsumeItems lists fixed ItemStacks (e.g. silicon-smelter wants
+// 1 coal + 1 sand per craft); UnitFactory's ConsumeItemDynamic resolves
+// via the currently-selected plan's requirements (often much larger:
+// a Mega plan needs 30 silicon). Filter consumers don't carry per-item
+// amounts (predicate only) and fall through to 0. Returns 0 means
+// "no fixed minimum — slider rules".
+function recipeMinForBuild(b, item) {
+    if (!b || !item) return 0;
+    const block = b.block;
+    if (!block || !block.consumers) return 0;
+    try {
+        for (let i = 0; i < block.consumers.length; i++) {
+            const c = block.consumers[i];
+            if (c instanceof ConsumeItems) {
+                for (let j = 0; j < c.items.length; j++) {
+                    if (c.items[j].item === item) return c.items[j].amount;
+                }
+            } else if (c instanceof ConsumeItemDynamic) {
+                if (block instanceof UnitFactory && b.currentPlan != -1) {
+                    const reqs = block.plans.get(b.currentPlan).requirements;
+                    for (let k = 0; k < reqs.length; k++) {
+                        if (reqs[k].item === item) return reqs[k].amount;
+                    }
+                }
+            }
+        }
+    } catch (e) {}
+    return 0;
+}
+
+// Stock level the drone is supposed to keep this consumer at. Two
+// inputs combine:
+//   1) slider target = floor(cap * fillPct / 100), the user's "top up
+//      consumers to X% of capacity" knob.
+//   2) recipe minimum = per-craft amount from ConsumeItems / current
+//      UnitFactory plan. The drone must deliver at least this much or
+//      the factory can't run a single cycle — ignoring this would
+//      strand a multi-press at silicon=2/30 with fillPct=5% (slider
+//      target=1) even though it needs 4 to consume.
+// Final target = min(max(slider, recipe), cap). Capped at cap so a
+// UnitFactory plan needing more than itemCapacity still terminates
+// (we ask for as much as the block can hold). Returns 0 when the
+// block has no per-item capacity (doesn't consume `item` at all);
+// callers' `stock >= target` skip catches that cleanly.
+exports.getTargetFill = function(b, item) {
+    if (!b) return 0;
+    const block = b.block;
+    if (!block) return 0;
     const cap = exports.getCapacityFor(block, item);
     if (cap <= 0) return 0;
-    return Math.max(1, Math.floor(cap * exports.getFillPct() / 100));
+    const slider = Math.max(1, Math.floor(cap * exports.getFillPct() / 100));
+    const recipe = recipeMinForBuild(b, item);
+    const target = Math.max(slider, recipe);
+    return target > cap ? cap : target;
 }
 
 exports.isEnabled = function(block) {

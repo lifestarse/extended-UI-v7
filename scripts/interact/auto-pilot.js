@@ -103,7 +103,7 @@ function isStale(target, unit) {
         // buffer for this item). Note: NOT gated on "drone could deliver
         // a full batch" — a drone with 3 items left should still finish
         // delivering to a consumer that needs more.
-        const tgt = consumerConfig.getTargetFill(target.b.block, stack.item);
+        const tgt = consumerConfig.getTargetFill(target.b, stack.item);
         const stk = target.b.items ? target.b.items.get(stack.item) : 0;
         if (stk >= tgt) return true;
         return target.b.acceptStack(stack.item, 1, unit) <= 0;
@@ -308,7 +308,7 @@ function findCoreFetchForConsumer(unit, team) {
             // already at target) and shuttles it back to the core.
             const stockOf = (item) => b.items ? b.items.get(item) : 0;
             const wants = (item) => {
-                const target = consumerConfig.getTargetFill(block, item);
+                const target = consumerConfig.getTargetFill(b, item);
                 if (stockOf(item) >= target) return false;
                 return b.acceptStack(item, 1, probeUnit) > 0;
             };
@@ -378,7 +378,7 @@ function findBestConsumer(unit, item, team) {
             // even though the drone could top up the remaining slot,
             // and the autopilot kept fetching from core only to dump
             // back ("shuttle" loop).
-            const target = consumerConfig.getTargetFill(block, item);
+            const target = consumerConfig.getTargetFill(b, item);
             const stock = b.items ? b.items.get(item) : 0;
             if (stock >= target) {
                 if (debugging) dlog(blockTag(b) + " skip(" + item.name + "): stock=" + stock + " >= target=" + target);
