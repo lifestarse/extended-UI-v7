@@ -9,11 +9,16 @@ const storageEditDialog = require("extended-ui/ui/dialogs/storage-edit-dialog");
 const iconsUtil = require("extended-ui/utils/icons");
 
 // Background drawable used to frame each list row in the sub-dialogs. Tex.pane
-// is the standard Mindustry panel skin; if it isn't on this build for some
-// reason, fall back to Tex.button (a slightly stronger button frame).
+// rendered too faintly against the dialog's dark background — rows blurred into
+// each other, so it wasn't obvious which checkbox/icon on the left belonged to
+// which priority field on the right (rows span the full pane width). Match the
+// visible-bordered style used by units-table-ui: Tex.buttonEdge4 on v7+ (clean
+// outlined frame), Styles.black3 on v6, then progressively softer fallbacks.
 const ROW_BG = (function() {
+    try { if (Version.number > 6 && Tex.buttonEdge4 != null) return Tex.buttonEdge4; } catch (e) {}
+    try { if (Styles.black3 != null) return Styles.black3; } catch (e) {}
+    try { if (Tex.button != null) return Tex.button; } catch (e) {}
     try { if (Tex.pane != null) return Tex.pane; } catch (e) {}
-    try { return Tex.button; } catch (e) {}
     return null;
 })();
 
