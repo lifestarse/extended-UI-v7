@@ -50,32 +50,60 @@ exports.getMinAmountFor = function(block, item) {
     return Math.max(1, Math.floor(cap * exports.getFillPct() / 100));
 }
 
-// Item-equivalent capacity for a block — handles ItemTurret ammo math
-// the same way getMinAmountFor does, but returns the raw cap instead
-// of the percentage-derived batch size.
-exports.getCapacityFor = function(block, item) {
-    if (!block) return 0;
-    let cap = 0;
+// Does this block actually consume the given item? Walks block.consumers
+// and matches against ConsumeItems / ConsumeItemFilter precisely;
+// ConsumeItemDynamic is build-state-dependent (UnitFactory.currentPlan)
+// so without a Building reference we conservatively return true and
+// let the caller's acceptStack be the actual gate.
+function consumesSpecificItem(block, item) {
+    if (!block || !item || !block.consumers) return false;
     try {
-        if (block instanceof ItemTurret && block.maxAmmo > 0 && block.ammoTypes) {
-            if (item != null) {
-                const ammoType = block.ammoTypes.get(item);
-                if (ammoType && ammoType.ammoMultiplier > 0) {
-                    cap = Math.floor(block.maxAmmo / ammoType.ammoMultiplier);
+        for (let i = 0; i < block.consumers.length; i++) {
+            const c = block.consumers[i];
+            if (c instanceof ConsumeItems) {
+                for (let j = 0; j < c.items.length; j++) {
+                    if (c.items[j].item === item) return true;
                 }
+            } else if (c instanceof ConsumeItemFilter) {
+                if (c.filter && c.filter.get(item)) return true;
+            } else if (c instanceof ConsumeItemDynamic) {
+                return true;
             }
         }
     } catch (e) {}
-    if (cap <= 0) cap = block.itemCapacity || 0;
-    return cap;
+    return false;
+}
+
+// Per-item capacity. Returns 0 when the item isn't relevant to this
+// block — silicon-smelter has itemCapacity=10 but doesn't consume
+// silicon (silicon is its output), so getCapacityFor(smelter, silicon)
+// must be 0; otherwise findBestConsumer reads the smelter's full
+// silicon output buffer as "smelter wants silicon up to 10" and the
+// log fills with `silicon-smelter skip(silicon): stock=10>=target=10`
+// false rejections. ItemTurrets only have capacity for items in their
+// ammoTypes; everything else returns 0 too.
+exports.getCapacityFor = function(block, item) {
+    if (!block) return 0;
+    try {
+        if (block instanceof ItemTurret) {
+            if (item == null || !block.maxAmmo || !block.ammoTypes) return 0;
+            const ammoType = block.ammoTypes.get(item);
+            if (!ammoType || !ammoType.ammoMultiplier || ammoType.ammoMultiplier <= 0) return 0;
+            return Math.floor(block.maxAmmo / ammoType.ammoMultiplier);
+        }
+    } catch (e) {}
+    if (item != null && !consumesSpecificItem(block, item)) return 0;
+    return block.itemCapacity || 0;
 }
 
 // Stock level the drone is supposed to keep this consumer at:
 // floor(cap * fillPct / 100). Drone visits when current stock falls
 // below this; isStale fires when stock climbs back to or above it.
+// Returns 0 when the block has no per-item capacity (doesn't consume
+// the item); callers' `stock >= target` skip catches that cleanly.
 exports.getTargetFill = function(block, item) {
     const cap = exports.getCapacityFor(block, item);
-    if (cap <= 0) return 1;
+    if (cap <= 0) return 0;
     return Math.max(1, Math.floor(cap * exports.getFillPct() / 100));
 }
 
