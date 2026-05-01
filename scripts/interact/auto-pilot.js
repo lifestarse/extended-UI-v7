@@ -120,12 +120,17 @@ function pickTarget(unit, team) {
     const drillOn = Core.settings.getBool("eui-auto-collect-drill", false);
     // Bottom-bar interact-core button gates every core trip.
     const coreOn = Core.settings.getBool("eui-interact-core", false);
+    const debugging = dbg();
+    const stackTag = stack.amount > 0 && stack.item
+        ? stack.item.name + "x" + stack.amount
+        : "empty";
 
     // Drain trips override everything else: once items are picked up from
     // a drain storage, the drone heads straight to core to unload them.
     if (stack.amount > 0 && stack.item && storageDrain.isCarrying() && coreOn) {
         const core = Vars.player.closestCore();
         if (core) {
+            if (debugging) dlog("pickTarget(" + stackTag + "): drain-carry override -> core-dump");
             return { x: core.x, y: core.y, b: core, item: stack.item, expectsConsumer: false, kind: "core-dump" };
         }
     }
@@ -141,6 +146,8 @@ function pickTarget(unit, team) {
             if (p) {
                 p.kind = "producer-topup";
                 candidates.push({ task: "producer-topup", target: p });
+            } else if (debugging) {
+                dlog("pickTarget(" + stackTag + "): producer-topup -> none");
             }
         }
         if (fillOn) {
@@ -148,6 +155,8 @@ function pickTarget(unit, team) {
             if (c) {
                 c.kind = "consumer-deliver";
                 candidates.push({ task: "consumer-deliver", target: c });
+            } else if (debugging) {
+                dlog("pickTarget(" + stackTag + "): consumer-deliver -> none");
             }
         }
         if (storageOn) {
@@ -155,6 +164,8 @@ function pickTarget(unit, team) {
             if (s) {
                 s.kind = "storage-deliver";
                 candidates.push({ task: "storage-deliver", target: s });
+            } else if (debugging) {
+                dlog("pickTarget(" + stackTag + "): storage-deliver -> none");
             }
         }
         if (coreOn) {
@@ -178,6 +189,7 @@ function pickTarget(unit, team) {
         if (fillOn && coreOn) {
             const consumerFetch = findCoreFetchForConsumer(unit, team);
             if (consumerFetch) candidates.push({ task: "consumer-core-fetch", target: consumerFetch });
+            else if (debugging) dlog("pickTarget(empty): consumer-core-fetch -> none");
         }
         if (factoryOn || drillOn) {
             const p = findBestProducer(unit, team, factoryOn, drillOn, null);
@@ -188,7 +200,16 @@ function pickTarget(unit, team) {
         }
     }
 
-    return taskPriority.pickHighest(candidates);
+    const winner = taskPriority.pickHighest(candidates);
+    if (debugging) {
+        const list = candidates.map(c => {
+            const item = c.target && c.target.item ? c.target.item.name : "?";
+            return c.task + "[" + taskPriority.get(c.task) + "," + item + "]";
+        }).join(", ");
+        const winName = winner ? (winner.kind || "?") + (winner.item ? "(" + winner.item.name + ")" : "") : "null";
+        dlog("pickTarget(" + stackTag + "): cands=[" + list + "] -> " + winName);
+    }
+    return winner;
 }
 
 function teamBuildings(team) {
@@ -280,6 +301,9 @@ function findCoreFetchForConsumer(unit, team) {
     // empty waiting their turn. Iterating turrets first guarantees
     // they get serviced before the iteration reaches a consumer that's
     // also asking.
+    const debugging = dbg();
+    let chosenBuild = null;
+
     if (turretsOn) {
         builds.each(b => {
             if (chosenItem) return;
@@ -289,24 +313,43 @@ function findCoreFetchForConsumer(unit, team) {
                 if (!consumerConfig.isEnabled(block)) return;
                 if (!block.ammoTypes) return;
                 let pick = null;
+                let pickReason = null;
                 block.ammoTypes.each((item, ammo) => {
                     if (pick) return;
-                    if (!turretAmmoConfig.isEnabled(block, item)) return;
-                    if (core.items.get(item) < coreLimits.getLimit(item)) return;
-                    if (b.acceptStack(item, 1, probeUnit) <= 0) return;
+                    if (!turretAmmoConfig.isEnabled(block, item)) {
+                        if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): ammo disabled in config");
+                        return;
+                    }
+                    if (core.items.get(item) < coreLimits.getLimit(item)) {
+                        if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): core stock=" + core.items.get(item) + " < limit=" + coreLimits.getLimit(item));
+                        return;
+                    }
+                    if (b.acceptStack(item, 1, probeUnit) <= 0) {
+                        if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): acceptStack=0");
+                        return;
+                    }
                     // Skip ammo the turret already has loaded — assume
                     // external feed (conveyor, another drone trip) is
                     // supplying it. Without this gate the drone races
                     // the conveyor: pass-1 picks the type because
                     // acceptStack>0 for a tick, by arrival the conveyor
                     // has filled the gap, drone dumps to core. Loop.
-                    if (consumerConfig.turretHasItemAmmo(b, item)) return;
+                    if (consumerConfig.turretHasItemAmmo(b, item)) {
+                        if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): turret already has this ammo loaded");
+                        return;
+                    }
                     pick = item;
+                    pickReason = "acceptStack=" + b.acceptStack(item, 1, probeUnit);
                 });
-                if (pick) chosenItem = pick;
+                if (pick) {
+                    chosenItem = pick;
+                    chosenBuild = b;
+                    if (debugging) dlog("fetch-pass1 " + blockTag(b) + " picked " + pick.name + " (" + pickReason + ")");
+                }
             } catch (e) {}
         });
         if (chosenItem) {
+            if (debugging) dlog("findCoreFetchForConsumer: pass-1 (turrets) -> " + chosenItem.name + " for " + (chosenBuild ? blockTag(chosenBuild) : "?"));
             return { x: core.x, y: core.y, b: core, item: chosenItem, expectsConsumer: false, kind: "core-fetch" };
         }
     }
@@ -368,7 +411,11 @@ function findCoreFetchForConsumer(unit, team) {
         } catch (e) {}
     });
 
-    if (!chosenItem) return null;
+    if (!chosenItem) {
+        if (debugging) dlog("findCoreFetchForConsumer: nothing to fetch (both passes found 0)");
+        return null;
+    }
+    if (debugging) dlog("findCoreFetchForConsumer: pass-2 (consumers) -> " + chosenItem.name);
     return { x: core.x, y: core.y, b: core, item: chosenItem, expectsConsumer: false, kind: "core-fetch" };
 }
 

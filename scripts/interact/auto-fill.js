@@ -5,6 +5,14 @@ const consumerConfig = require("extended-ui/interact/consumer-config");
 const turretAmmoConfig = require("extended-ui/interact/turret-ammo-config");
 const autoPilot = require("extended-ui/interact/auto-pilot");
 
+// Debug logging — gated on the same eui-debug-autopilot setting the
+// auto-pilot module uses, so a single toggle covers the whole pipeline.
+function dbg() { return Core.settings.getBool("eui-debug-autopilot", false); }
+function dlog(s) { if (dbg()) try { log("[eui-af] " + s); } catch (e) {} }
+function bTag(b) {
+    try { return b.block.name + "@" + b.tile.x + "," + b.tile.y; } catch (e) { return "?"; }
+}
+
 // True when the autopilot is steering the drone to a non-core destination.
 // We use this to suppress the core-dump fallback in this module: otherwise
 // the drone deposits its stack the moment its path crosses core range,
@@ -66,6 +74,7 @@ Events.run(Trigger.update, () => {
             const stock = b.items ? b.items.get(stack.item) : 0;
             const accepted = b.acceptStack(stack.item, stack.amount, player.unit());
             if (stock < target && accepted > 0) {
+                if (dbg()) dlog("range-iter " + bTag(b) + " wants " + stack.item.name + " (stock=" + stock + " target=" + target + " accepted=" + accepted + ")");
                 request = b;
                 requestPriority = blockPriority;
                 return;
@@ -89,12 +98,14 @@ Events.run(Trigger.update, () => {
             newRequest = getItemRequest(b, block, core);
         }
         if (newRequest) {
+            if (dbg()) dlog("range-iter " + bTag(b) + " requests " + newRequest.name + " from core");
             request = newRequest;
             requestPriority = blockPriority;
         }
     });
 
     if (request instanceof Building) {
+        if (dbg()) dlog("transfer " + (stack.item ? stack.item.name : "?") + "x" + stack.amount + " -> " + bTag(request));
         Call.transferInventory(player, request);
         timer.increase();
         return;
@@ -106,15 +117,31 @@ Events.run(Trigger.update, () => {
         // Storage-reservation guard uses a fixed 5-unit floor (matches the
         // hardcoded floor in storage-fill.js): if the stack is at least
         // that big and a storage is reserving the item, hold it.
-        if (stack.amount >= 5 && storageFill.isItemReservedForStorage(stack.item, team)) return;
-        if (autopilotHeadingNonCore()) return;
+        if (stack.amount >= 5 && storageFill.isItemReservedForStorage(stack.item, team)) {
+            if (dbg()) dlog("dump-suppressed: storage reserves " + stack.item.name + " stack=" + stack.amount);
+            return;
+        }
+        if (autopilotHeadingNonCore()) {
+            if (dbg()) {
+                const t = autoPilot.getTarget();
+                dlog("dump-suppressed: autopilot heading " + (t && t.kind ? t.kind : "?") + " (" + (t && t.item ? t.item.name : "?") + ")");
+            }
+            return;
+        }
+        if (dbg()) {
+            const t = autoPilot.getTarget();
+            dlog("DUMP " + (stack.item ? stack.item.name : "?") + "x" + stack.amount
+                + " to core (autopilot target=" + (t ? (t.kind || "?") : "null") + ")");
+        }
         Call.transferInventory(player, core);
         if (stack.amount > 0) {
             Call.dropItem(0);
         }
         timer.increase();
     } else if (request) {
-        Call.requestItem(player, core, request, computeFetchAmount(request, team, player));
+        const amount = computeFetchAmount(request, team, player);
+        if (dbg()) dlog("FETCH " + request.name + " x" + amount + " from core");
+        Call.requestItem(player, core, request, amount);
         timer.increase();
     }
 });
@@ -135,7 +162,11 @@ Events.run(Trigger.update, () => {
 // Other slider values keep the legacy "request 999, game caps"
 // behavior unchanged.
 function computeFetchAmount(item, team, player) {
-    if (consumerConfig.getFillPct() !== 0) return 999;
+    const debugging = dbg();
+    if (consumerConfig.getFillPct() !== 0) {
+        if (debugging) dlog("computeFetchAmount(" + item.name + "): slider!=0 -> 999");
+        return 999;
+    }
     const unit = player.unit();
     if (!unit || !unit.type) return 999;
     const droneCap = unit.type.itemCapacity || 0;
@@ -163,7 +194,10 @@ function computeFetchAmount(item, team, player) {
                 const target = consumerConfig.getTargetFill(b, item);
                 if (target <= 0) return;
                 const stock = b.items ? b.items.get(item) : 0;
-                if (stock >= target) return;
+                if (stock >= target) {
+                    if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): stock=" + stock + ">=target=" + target);
+                    return;
+                }
                 // Top up to the smart-batch target so the buffer
                 // drains cleanly. need = clean batch size minus what
                 // the consumer already holds.
@@ -173,12 +207,23 @@ function computeFetchAmount(item, team, player) {
                 // (no race against external feeds). need = acceptStack
                 // room so the drone fetches exactly what fits.
                 if (!b.ammo) return;
-                if (consumerConfig.turretHasItemAmmo(b, item)) return;
+                if (consumerConfig.turretHasItemAmmo(b, item)) {
+                    if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): turret has this ammo loaded");
+                    return;
+                }
                 need = b.acceptStack(item, droneCap, unit);
-                if (need <= 0) return;
+                if (need <= 0) {
+                    if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): acceptStack=0");
+                    return;
+                }
             }
             if (need <= 0) return;
-            if (total + need <= droneCap) total += need;
+            if (total + need <= droneCap) {
+                total += need;
+                if (debugging) dlog("computeFetch " + bTag(b) + " add(" + item.name + "): need=" + need + " total=" + total + "/" + droneCap);
+            } else if (debugging) {
+                dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): need=" + need + " wouldn't fit (total=" + total + " + need > droneCap=" + droneCap + ")");
+            }
         } catch (e) {}
     };
 
@@ -193,6 +238,10 @@ function computeFetchAmount(item, team, player) {
         Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, visit);
     }
 
+    if (debugging) {
+        if (total > 0) dlog("computeFetchAmount(" + item.name + "): sum=" + total + " (drone cap=" + droneCap + ")");
+        else dlog("computeFetchAmount(" + item.name + "): sum=0, fallback to 999");
+    }
     return total > 0 ? total : 999;
 }
 
