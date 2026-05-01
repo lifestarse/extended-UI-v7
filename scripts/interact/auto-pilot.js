@@ -48,8 +48,11 @@ Events.run(Trigger.update, () => {
         return;
     }
 
+    // Throttle scans: a null result is also cached for RESCAN_TICKS so
+    // the per-tick spam during idle (no work to do) doesn't grind through
+    // every turret in builds.each on every render frame.
     scanTick++;
-    if (scanTick >= RESCAN_TICKS || !cached || isStale(cached, unit)) {
+    if (scanTick >= RESCAN_TICKS || (cached && isStale(cached, unit))) {
         scanTick = 0;
         cached = pickTarget(unit, player.team());
     }
