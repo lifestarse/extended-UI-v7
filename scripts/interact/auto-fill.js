@@ -5,6 +5,7 @@ const consumerConfig = require("extended-ui/interact/consumer-config");
 const turretAmmoConfig = require("extended-ui/interact/turret-ammo-config");
 const autoPilot = require("extended-ui/interact/auto-pilot");
 const logger = require("extended-ui/utils/logger").make("eui-af");
+const teamBuildingsCache = require("extended-ui/utils/team-buildings-cache");
 
 // Debug logging shares the auto-pilot toggle (see utils/logger.js) so
 // one switch covers the whole pipeline.
@@ -264,8 +265,8 @@ function computeFetchAmount(item, team, player) {
     // chance to fill multiple consumers with one trip. Without
     // autopilot we limit to in-range so non-pilot mode stays local.
     if (Core.settings.getBool("eui-auto-pilot", false)) {
-        const data = team.data();
-        if (data && data.buildings) data.buildings.each(visit);
+        const builds = teamBuildingsCache.get(team);
+        if (builds) builds.each(visit);
     } else {
         Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, visit);
     }

@@ -8,6 +8,7 @@ const taskPriority = require("extended-ui/interact/task-priority");
 const consumerConfig = require("extended-ui/interact/consumer-config");
 const turretAmmoConfig = require("extended-ui/interact/turret-ammo-config");
 const logger = require("extended-ui/utils/logger").make("eui-ap");
+const teamBuildingsCache = require("extended-ui/utils/team-buildings-cache");
 
 const RESCAN_TICKS = 30;
 const ARRIVE_PADDING = Vars.tilesize * 2;
@@ -217,11 +218,12 @@ function pickTarget(unit, team) {
     return winner;
 }
 
+// Cached snapshot — invalidated on build/destroy/world-load by
+// utils/team-buildings-cache. pickTarget calls into builds.each up to
+// four times per scan (storage / drain / consumer / producer), so a
+// single shared snapshot avoids re-walking the underlying Seq.
 function teamBuildings(team) {
-    if (!team) return null;
-    const data = team.data();
-    if (!data || !data.buildings) return null;
-    return data.buildings;
+    return teamBuildingsCache.get(team);
 }
 
 function findBestStorageNeed(unit, item, team) {
