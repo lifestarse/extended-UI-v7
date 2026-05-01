@@ -7,6 +7,7 @@ const playerBusy = require("extended-ui/interact/player-busy");
 const taskPriority = require("extended-ui/interact/task-priority");
 const consumerConfig = require("extended-ui/interact/consumer-config");
 const turretAmmoConfig = require("extended-ui/interact/turret-ammo-config");
+const logger = require("extended-ui/utils/logger").make("eui-ap");
 
 const RESCAN_TICKS = 30;
 const ARRIVE_PADDING = Vars.tilesize * 2;
@@ -14,20 +15,14 @@ const ARRIVE_PADDING = Vars.tilesize * 2;
 let cached = null;
 let scanTick = RESCAN_TICKS;
 
-// Debug logging — gated on the eui-debug-autopilot setting. Logs hit
-// every time pickTarget runs (≈ once per RESCAN_TICKS = 0.5s), so
-// they're noisy but only fire while the toggle is on. When the user
-// can't tell why the drone ignores a particular consumer, switching
-// this on for a few seconds and grepping last_log.txt for the block
-// name shows exactly which filter rejected it.
-function dbg() { return Core.settings.getBool("eui-debug-autopilot", false); }
-// log() goes through Mindustry's Log facility and ends up in
-// last_log.txt; print() only writes to stdout, which the user can't
-// read after the fact.
-function dlog(s) { if (dbg()) try { log("[eui-ap] " + s); } catch (e) {} }
-function blockTag(b) {
-    try { return b.block.name + "@" + b.tile.x + "," + b.tile.y; } catch (e) { return "?"; }
-}
+// Debug logging via the shared eui-debug-autopilot toggle (see
+// utils/logger.js). When the user can't tell why the drone ignores a
+// particular consumer, switching this on for a few seconds and
+// grepping last_log.txt for the block name shows exactly which filter
+// rejected it.
+function dbg() { return logger.enabled(); }
+function dlog(s) { logger.log(s); }
+function blockTag(b) { return logger.tag(b); }
 
 // Other modules (auto-fill, auto-collect) consult this so they don't dump
 // the drone's stack into the core just because the autopilot's path took

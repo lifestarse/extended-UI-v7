@@ -4,14 +4,13 @@ const storageFill = require("extended-ui/interact/storage-fill");
 const consumerConfig = require("extended-ui/interact/consumer-config");
 const turretAmmoConfig = require("extended-ui/interact/turret-ammo-config");
 const autoPilot = require("extended-ui/interact/auto-pilot");
+const logger = require("extended-ui/utils/logger").make("eui-af");
 
-// Debug logging — gated on the same eui-debug-autopilot setting the
-// auto-pilot module uses, so a single toggle covers the whole pipeline.
-function dbg() { return Core.settings.getBool("eui-debug-autopilot", false); }
-function dlog(s) { if (dbg()) try { log("[eui-af] " + s); } catch (e) {} }
-function bTag(b) {
-    try { return b.block.name + "@" + b.tile.x + "," + b.tile.y; } catch (e) { return "?"; }
-}
+// Debug logging shares the auto-pilot toggle (see utils/logger.js) so
+// one switch covers the whole pipeline.
+function dbg() { return logger.enabled(); }
+function dlog(s) { logger.log(s); }
+function bTag(b) { return logger.tag(b); }
 
 // True when the autopilot is steering the drone to a non-core destination.
 // We use this to suppress the core-dump fallback in this module: otherwise
