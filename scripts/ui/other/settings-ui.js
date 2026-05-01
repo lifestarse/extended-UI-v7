@@ -8,19 +8,29 @@ const taskPriority = require("extended-ui/interact/task-priority");
 const storageEditDialog = require("extended-ui/ui/dialogs/storage-edit-dialog");
 const iconsUtil = require("extended-ui/utils/icons");
 
-// Background drawable used to frame each list row in the sub-dialogs. Tex.pane
-// rendered too faintly against the dialog's dark background — rows blurred into
-// each other, so it wasn't obvious which checkbox/icon on the left belonged to
-// which priority field on the right (rows span the full pane width). Match the
-// visible-bordered style used by units-table-ui: Tex.buttonEdge4 on v7+ (clean
-// outlined frame), Styles.black3 on v6, then progressively softer fallbacks.
+// Background drawable used to frame each list row in the sub-dialogs.
+// Styles.black3 is a black panel with raised edges — same drawable that gives
+// block-info-ui its visible bordered look. Tex.pane / Tex.buttonEdge4 were too
+// faint to see across the very wide rows in the priority dialog (icon+check on
+// far left, priority field on far right, huge empty middle).
 const ROW_BG = (function() {
-    try { if (Version.number > 6 && Tex.buttonEdge4 != null) return Tex.buttonEdge4; } catch (e) {}
     try { if (Styles.black3 != null) return Styles.black3; } catch (e) {}
+    try { if (Tex.buttonEdge4 != null) return Tex.buttonEdge4; } catch (e) {}
     try { if (Tex.button != null) return Tex.button; } catch (e) {}
     try { if (Tex.pane != null) return Tex.pane; } catch (e) {}
     return null;
 })();
+
+// Drop a thin colored horizontal line under a row so the eye can trace from
+// the left-side icon/checkbox to the right-side priority field even when the
+// row background drawable is too subtle on the current Mindustry theme. Cheap
+// belt-and-suspenders fallback — works regardless of which ROW_BG ends up.
+function addRowSeparator(parent) {
+    try {
+        parent.image(Tex.whiteui).color(Pal.gray).height(2).growX().padTop(0).padBottom(0);
+        parent.row();
+    } catch (e) {}
+}
 
 // === Per-sub-dialog reset helpers ============================================
 // Each one removes only the prefix-keyed Core.settings entries that its own
@@ -334,8 +344,9 @@ function buildCoreLimitsDialog() {
                 coreLimits.resetLimit(item);
                 fieldElement.setText(coreLimits.DEFAULT_LIMIT + "");
             }).size(36).pad(4).tooltip(Core.bundle.get("eui.core-limits.reset-tooltip"));
-        }).growX().pad(2);
+        }).growX().pad(4);
         parent.row();
+        addRowSeparator(parent);
     }
 
     dialog.shown(() => rebuild());
@@ -432,8 +443,9 @@ function buildCollectTargetsDialog() {
             row.check("", collectConfig.isFactoryEnabled(block), b => {
                 collectConfig.setFactoryEnabled(block, b);
             }).pad(4);
-        }).growX().pad(2);
+        }).growX().pad(4);
         parent.row();
+        addRowSeparator(parent);
     }
 
     function addDrillItemRow(parent, item) {
@@ -443,8 +455,9 @@ function buildCollectTargetsDialog() {
             row.check("", collectConfig.isDrillItemEnabled(item), b => {
                 collectConfig.setDrillItemEnabled(item, b);
             }).pad(4);
-        }).growX().pad(2);
+        }).growX().pad(4);
         parent.row();
+        addRowSeparator(parent);
     }
 
     dialog.shown(() => rebuild());
@@ -538,8 +551,9 @@ function buildStorageListDialog() {
             row.button(Icon.pencil, Styles.cleari, () => {
                 storageEditDialog.build(building, () => rebuild()).show();
             }).size(36).pad(4);
-        }).growX().pad(2);
+        }).growX().pad(4);
         parent.row();
+        addRowSeparator(parent);
     }
 
     dialog.shown(() => rebuild());
@@ -629,8 +643,9 @@ function buildTaskPriorityDialog() {
                 taskPriority.reset(task.id);
                 fieldElement.setText(task.defaultPriority + "");
             }).size(36).pad(4);
-        }).growX().pad(2);
+        }).growX().pad(4);
         parent.row();
+        addRowSeparator(parent);
     }
 
     function addCategoryHeader(parent, category, blocks) {
@@ -669,8 +684,9 @@ function buildTaskPriorityDialog() {
             } else {
                 row.add().size(36).pad(4);
             }
-        }).growX().pad(2);
+        }).growX().pad(4);
         parent.row();
+        addRowSeparator(parent);
     }
 
     dialog.shown(() => rebuild());
@@ -727,8 +743,9 @@ function buildTurretAmmoDialog(turretBlock) {
             });
             fieldCell.valid(text => /^\d+$/.test(text) && parseInt(text) <= turretAmmoConfig.MAX_PRIORITY);
             fieldCell.width(80).pad(4);
-        }).growX().pad(2);
+        }).growX().pad(4);
         parent.row();
+        addRowSeparator(parent);
     }
 
     dialog.shown(() => rebuild());
