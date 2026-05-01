@@ -147,24 +147,27 @@ exports.getTargetFill = function(b, item) {
     if (!block) return 0;
     const cap = exports.getCapacityFor(block, item);
     if (cap <= 0) return 0;
-    // Slider can legitimately produce 0 (user picked the 0 % stop on the
-    // 'top up to X %' slider, meaning 'don't pre-fill, only enough to run
-    // the recipe'). Recipe min then becomes the actual target — that's
-    // also why we don't Math.max(1, ...) here.
-    const slider = Math.floor(cap * exports.getFillPct() / 100);
+    const pct = exports.getFillPct();
     const recipe = recipeMinForBuild(b, item);
+    // Slider=0 % is "smart batch" mode: target = largest multiple of
+    // recipe that fits in the consumer's capacity, so each delivery
+    // drains cleanly to 0. The fetch path in auto-fill.js sums these
+    // per-consumer targets across reachable consumers and pulls
+    // exactly that much from the core. crucible coal at slider=0 %:
+    // floor(30/4)*4 = 28 — not the recipe min (4), not cap (30).
+    // Filter / turret consumers without a fixed recipe fall back to
+    // cap (deliver as much as fits).
+    if (pct === 0) {
+        if (recipe > 0) return Math.floor(cap / recipe) * recipe;
+        return cap;
+    }
+    const slider = Math.floor(cap * pct / 100);
     let target = Math.max(slider, recipe);
     if (target > cap) target = cap;
-    // Quantize to a multiple of `recipe` so the buffer drains exactly
-    // to 0 over N craft cycles. silicon-crucible has itemCapacity=30
-    // and consumes 4 coal per craft — loading to 30 leaves 2 coal
-    // stuck after 7 cycles (30 mod 4 = 2). Round UP to the next
-    // multiple so the slider biases toward a fuller buffer (50 % on
-    // a 30-cap, 4-recipe block gives 16, not 12 — closer to the
-    // user's stated "half full" intent). When the round-up exceeds
-    // cap, fall back to the largest multiple that still fits
-    // (floor(cap/recipe)*recipe) so we never ask for more than the
-    // block can hold.
+    // Quantize up to a multiple of `recipe` so the buffer drains
+    // exactly to 0 over N craft cycles. Round UP so the slider
+    // biases toward a fuller buffer; if rounding up exceeds cap,
+    // fall back to the largest multiple that still fits.
     if (recipe > 0) {
         target = Math.ceil(target / recipe) * recipe;
         if (target > cap) target = Math.floor(cap / recipe) * recipe;

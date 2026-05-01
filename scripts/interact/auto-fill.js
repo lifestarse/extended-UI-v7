@@ -110,10 +110,69 @@ Events.run(Trigger.update, () => {
         }
         timer.increase();
     } else if (request) {
-        Call.requestItem(player, core, request, 999);
+        Call.requestItem(player, core, request, computeFetchAmount(request, team, player));
         timer.increase();
     }
 });
+
+// At slider=0 % the per-consumer target is "largest clean multiple of
+// recipe that fits in cap" (see consumerConfig.getTargetFill). Sum up
+// the actual needs of reachable consumers wanting `item` and pack them
+// greedily into the drone's own item capacity — that way the drone
+// fetches exactly what it'll deliver, with no leftover residue to dump.
+// Examples (slider=0 %, item=coal):
+//   drone cap 30, two silicon-crucibles needing 28 each: fetch=28
+//     (only the first crucible's load fits; second trip handles other)
+//   drone cap 30, three silicon-smelters needing 10 each: fetch=30
+//   drone cap 70, two crucibles + one smelter: fetch=28+28+10=66
+// Other slider values keep the legacy "request 999, game caps" behavior.
+function computeFetchAmount(item, team, player) {
+    if (consumerConfig.getFillPct() !== 0) return 999;
+    const unit = player.unit();
+    if (!unit || !unit.type) return 999;
+    const droneCap = unit.type.itemCapacity || 0;
+    if (droneCap <= 0) return 999;
+
+    const turretsOn = Core.settings.getBool("eui-auto-fill-turrets", true);
+    let total = 0;
+
+    const visit = b => {
+        if (total >= droneCap) return;
+        try {
+            const block = b.block;
+            if (!block || !consumerConfig.isEnabled(block)) return;
+            const isItemTurret = block instanceof ItemTurret;
+            if (isItemTurret && !turretsOn) return;
+            if (!isItemTurret) {
+                if (!block.consumers) return;
+                if (!block.consumers.find(c =>
+                    c instanceof ConsumeItems
+                    || c instanceof ConsumeItemFilter
+                    || c instanceof ConsumeItemDynamic)) return;
+            }
+            const target = consumerConfig.getTargetFill(b, item);
+            if (target <= 0) return;
+            const stock = b.items ? b.items.get(item) : 0;
+            if (stock >= target) return;
+            if (b.acceptStack(item, 1, unit) <= 0) return;
+            const need = target - stock;
+            if (total + need <= droneCap) total += need;
+        } catch (e) {}
+    };
+
+    // Autopilot will steer the drone anywhere on the team's map after
+    // the fetch, so summing across the whole team gives the drone the
+    // chance to fill multiple consumers with one trip. Without
+    // autopilot we limit to in-range so non-pilot mode stays local.
+    if (Core.settings.getBool("eui-auto-pilot", false)) {
+        const data = team.data();
+        if (data && data.buildings) data.buildings.each(visit);
+    } else {
+        Vars.indexer.eachBlock(team, player.x, player.y, Vars.buildingRange, () => true, visit);
+    }
+
+    return total > 0 ? total : 999;
+}
 
 function getBestAmmo(turret, core) {
     let best = null;
