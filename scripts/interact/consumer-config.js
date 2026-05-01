@@ -17,7 +17,7 @@ exports.CATEGORIES = ["turrets", "crafters", "unit-factories", "generators", "ot
 // consumers in the line.
 exports.getFillPct = function() {
     const v = Core.settings.getInt(FILL_PCT_KEY, DEFAULT_FILL_PCT);
-    if (v <= 0) return 1;
+    if (v < 0) return 0;
     if (v > 100) return 100;
     return v;
 }
@@ -147,7 +147,11 @@ exports.getTargetFill = function(b, item) {
     if (!block) return 0;
     const cap = exports.getCapacityFor(block, item);
     if (cap <= 0) return 0;
-    const slider = Math.max(1, Math.floor(cap * exports.getFillPct() / 100));
+    // Slider can legitimately produce 0 (user picked the 0 % stop on the
+    // 'top up to X %' slider, meaning 'don't pre-fill, only enough to run
+    // the recipe'). Recipe min then becomes the actual target — that's
+    // also why we don't Math.max(1, ...) here.
+    const slider = Math.floor(cap * exports.getFillPct() / 100);
     const recipe = recipeMinForBuild(b, item);
     const target = Math.max(slider, recipe);
     return target > cap ? cap : target;

@@ -178,7 +178,7 @@ Events.on(EventType.ClientLoadEvent, () => {
         checkPref("eui-storage-click-ui", true);
         checkPref("eui-storage-hover-ui", true);
         checkPref("eui-auto-fill-turrets", true);
-        sliderPref("eui-consumer-fill-pct", consumerConfig.DEFAULT_FILL_PCT, 5, 100, 5, i => i + " %");
+        sliderPref("eui-consumer-fill-pct", consumerConfig.DEFAULT_FILL_PCT, 0, 100, 5, i => i + " %");
         checkPref("eui-auto-pilot", false);
         sliderPref("eui-steering-cooldown-sec", 2, 0, 10, 1, i => i + " s");
         sliderPref("eui-action-delay", 500, 0, 3000, 25, i => i + " ms");
