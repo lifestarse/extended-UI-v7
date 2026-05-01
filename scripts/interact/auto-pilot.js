@@ -294,6 +294,13 @@ function findCoreFetchForConsumer(unit, team) {
                     if (!turretAmmoConfig.isEnabled(block, item)) return;
                     if (core.items.get(item) < coreLimits.getLimit(item)) return;
                     if (b.acceptStack(item, 1, probeUnit) <= 0) return;
+                    // Skip ammo the turret already has loaded — assume
+                    // external feed (conveyor, another drone trip) is
+                    // supplying it. Without this gate the drone races
+                    // the conveyor: pass-1 picks the type because
+                    // acceptStack>0 for a tick, by arrival the conveyor
+                    // has filled the gap, drone dumps to core. Loop.
+                    if (consumerConfig.turretHasItemAmmo(b, item)) return;
                     pick = item;
                 });
                 if (pick) chosenItem = pick;

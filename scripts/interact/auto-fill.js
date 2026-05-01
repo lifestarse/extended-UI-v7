@@ -169,14 +169,11 @@ function computeFetchAmount(item, team, player) {
                 // the consumer already holds.
                 need = consumerConfig.getSmartBatchAmount(b, item) - stock;
             } else {
-                // Turrets get separate logic: trigger on any ammo
-                // room (acceptStack>0), not just fully-empty ammo.
-                // Otherwise partial-stock factories (Reconstructors,
-                // crafters) hog every fetch trip while turrets sit at
-                // low ammo waiting for the buffer to drain to 0. need
-                // is the actual room available so the drone fetches
-                // exactly what fits — no leftover residue.
+                // Turrets: refill only ammo types not currently loaded
+                // (no race against external feeds). need = acceptStack
+                // room so the drone fetches exactly what fits.
                 if (!b.ammo) return;
+                if (consumerConfig.turretHasItemAmmo(b, item)) return;
                 need = b.acceptStack(item, droneCap, unit);
                 if (need <= 0) return;
             }
@@ -216,6 +213,12 @@ function getBestAmmo(turretBuild, core) {
         // function acceptStack in object duo" the moment a turret
         // with empty ammo entered the auto-fill loop.
         if (turretBuild.acceptStack(item, 1, probeUnit) <= 0) return;
+        // Skip ammo the turret already has loaded — assume an external
+        // supply is feeding it. Otherwise drone races the conveyor:
+        // fetches pyratite, conveyor adds pyratite first, drone arrives
+        // full and dumps back to core. Only fetch when the buffer is
+        // genuinely empty for this specific ammo type.
+        if (consumerConfig.turretHasItemAmmo(turretBuild, item)) return;
         const damage = ammo.damage + ammo.splashDamage;
         const priority = turretAmmoConfig.getPriority(turret, item);
         // Priority dominates when set; damage breaks ties (and is the
