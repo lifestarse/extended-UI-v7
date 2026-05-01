@@ -127,33 +127,89 @@ exports.countDrains = function(b) {
     return count;
 }
 
-// Pick an item this storage is configured to drain and currently has stock for.
-// `coreAccepts` is an optional predicate (item -> bool) that filters by whether
-// the core can still accept the item without overflow.
-exports.findDrainItem = function(b, coreAccepts) {
-    let result = null;
-    Vars.content.items().each(item => {
-        if (result) return;
-        if (!exports.getDrain(b, item)) return;
-        if (!b.items || b.items.get(item) <= 0) return;
-        if (coreAccepts && !coreAccepts(item)) return;
-        result = item;
-    });
-    return result;
+// Per-storage rotation memory: which item was picked the last time we
+// resolved a tie. Lives in-memory only (resets on game launch). Survives
+// across ticks and pickTarget rescans, which is all we need to chain
+// "different item next time" when stocks are tied.
+const lastPickedDrain = {};
+const lastPickedFill = {};
+
+function tileKey(b) {
+    return b.tile.x + "_" + b.tile.y;
 }
 
-exports.findNeededItem = function(b, coreSupply, minDeficit) {
-    let result = null;
+// Round-robin among `tied` (already filtered to the winning stock value):
+// returns the item that doesn't equal the previously-picked one for this
+// storage; updates the memory. With a uniform-stock storage that holds N
+// distinct items the drone cycles through all N over N consecutive picks.
+function rotate(b, tied, memoryMap) {
+    if (tied.length === 0) return null;
+    if (tied.length === 1) {
+        memoryMap[tileKey(b)] = tied[0].name;
+        return tied[0];
+    }
+    const last = memoryMap[tileKey(b)];
+    let pick = null;
+    for (let i = 0; i < tied.length; i++) {
+        if (tied[i].name !== last) { pick = tied[i]; break; }
+    }
+    if (!pick) pick = tied[0];
+    memoryMap[tileKey(b)] = pick.name;
+    return pick;
+}
+
+// Pick an item this storage is configured to drain and currently has stock for.
+// `coreAccepts` is an optional predicate (item -> bool) that filters by whether
+// the core can still accept the item without overflow. Among eligible items the
+// one with the HIGHEST stock wins; ties rotate through tied items so the same
+// item isn't drained twice in a row when stocks are equal.
+exports.findDrainItem = function(b, coreAccepts) {
+    if (!b || !b.items) return null;
+    let bestStock = -1;
     Vars.content.items().each(item => {
-        if (result) return;
+        if (!exports.getDrain(b, item)) return;
+        const stock = b.items.get(item);
+        if (stock <= 0) return;
+        if (coreAccepts && !coreAccepts(item)) return;
+        if (stock > bestStock) bestStock = stock;
+    });
+    if (bestStock <= 0) return null;
+    const tied = [];
+    Vars.content.items().each(item => {
+        if (!exports.getDrain(b, item)) return;
+        const stock = b.items.get(item);
+        if (stock <= 0) return;
+        if (coreAccepts && !coreAccepts(item)) return;
+        if (stock === bestStock) tied.push(item);
+    });
+    return rotate(b, tied, lastPickedDrain);
+}
+
+// Pick an item this storage needs filled. The eligible item with the
+// LOWEST current stock wins; ties rotate so the drone cycles through
+// equally-empty items rather than always feeding the same one.
+exports.findNeededItem = function(b, coreSupply, minDeficit) {
+    if (!b || !b.items) return null;
+    let bestStock = Infinity;
+    Vars.content.items().each(item => {
         const threshold = exports.getThreshold(b, item);
         if (threshold <= 0) return;
-        if (!b.items) return;
         const stock = b.items.get(item);
         if (stock >= threshold) return;
         if (minDeficit > 0 && (threshold - stock) < minDeficit) return;
         if (coreSupply && !coreSupply(item)) return;
-        result = item;
+        if (stock < bestStock) bestStock = stock;
     });
-    return result;
+    if (bestStock === Infinity) return null;
+    const tied = [];
+    Vars.content.items().each(item => {
+        const threshold = exports.getThreshold(b, item);
+        if (threshold <= 0) return;
+        const stock = b.items.get(item);
+        if (stock >= threshold) return;
+        if (minDeficit > 0 && (threshold - stock) < minDeficit) return;
+        if (coreSupply && !coreSupply(item)) return;
+        if (stock === bestStock) tied.push(item);
+    });
+    return rotate(b, tied, lastPickedFill);
 }

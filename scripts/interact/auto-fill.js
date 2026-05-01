@@ -58,7 +58,8 @@ Events.run(Trigger.update, () => {
         if (blockPriority < requestPriority) return;
         if (blockPriority == requestPriority && request instanceof Building) return;
 
-        const minAmount = consumerConfig.getMinAmountFor(block, stack.item);
+        const droneCap = (player.unit().type && player.unit().type.itemCapacity) || 0;
+        const minAmount = consumerConfig.getDeliverableMinFor(block, stack.item, droneCap);
         // Two competing concerns when autopilot is steering:
         //   1) A leftover stack smaller than this consumer's batch size
         //      must still be deliverable, otherwise the drone parks at

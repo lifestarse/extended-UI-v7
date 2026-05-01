@@ -83,7 +83,8 @@ function isStale(target, unit) {
     if (stack.amount > 0 && stack.item) {
         if (!target.expectsConsumer) return true;
         if (target.item !== stack.item) return true;
-        const blockMin = consumerConfig.getMinAmountFor(target.b.block);
+        const droneCap = unit.type ? unit.type.itemCapacity : 0;
+        const blockMin = consumerConfig.getDeliverableMinFor(target.b.block, stack.item, droneCap);
         return target.b.acceptStack(stack.item, blockMin, unit) < blockMin;
     }
     if (target.expectsConsumer) return true;
@@ -279,7 +280,8 @@ function findCoreFetchForConsumer(unit, team) {
                 c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);
             if (!ci) return;
 
-            const minAmount = consumerConfig.getMinAmountFor(block);
+            const droneCap = (unit.type && unit.type.itemCapacity) || 0;
+            const minAmount = consumerConfig.getDeliverableMinFor(block, null, droneCap);
             const probe = Math.max(minAmount, 5);
 
             if (ci instanceof ConsumeItems) {
@@ -347,7 +349,11 @@ function findBestConsumer(unit, item, team) {
             // Per-block batch threshold: scales with the consumer's own
             // capacity (ammo capacity for turrets) so a 10-cap factory
             // and a 100-cap one share the same fill-percent slider.
-            const blockMin = consumerConfig.getMinAmountFor(block, item);
+            // Clamped to the drone's own capacity — a high-cap consumer
+            // (multi-press cap=30) would otherwise demand more room than
+            // a small drone can ever deliver in one trip.
+            const droneCap = (unit.type && unit.type.itemCapacity) || 0;
+            const blockMin = consumerConfig.getDeliverableMinFor(block, item, droneCap);
             if (b.acceptStack(item, blockMin, unit) < blockMin) return;
 
             const stock = b.items ? b.items.get(item) : 0;
