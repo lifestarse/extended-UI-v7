@@ -155,13 +155,20 @@ exports.getTargetFill = function(b, item) {
     const recipe = recipeMinForBuild(b, item);
     let target = Math.max(slider, recipe);
     if (target > cap) target = cap;
-    // Quantize down to a multiple of `recipe` so the buffer drains
-    // exactly to 0 over N craft cycles. silicon-crucible has
-    // itemCapacity=30 and consumes 4 coal per craft — loading to 30
-    // leaves 2 coal stuck after 7 cycles (30 mod 4 = 2). Rounding
-    // target to floor(30/4)*4 = 28 makes the buffer drain cleanly so
-    // the drone's next refill starts from an empty slot.
-    if (recipe > 0) target = Math.floor(target / recipe) * recipe;
+    // Quantize to a multiple of `recipe` so the buffer drains exactly
+    // to 0 over N craft cycles. silicon-crucible has itemCapacity=30
+    // and consumes 4 coal per craft — loading to 30 leaves 2 coal
+    // stuck after 7 cycles (30 mod 4 = 2). Round UP to the next
+    // multiple so the slider biases toward a fuller buffer (50 % on
+    // a 30-cap, 4-recipe block gives 16, not 12 — closer to the
+    // user's stated "half full" intent). When the round-up exceeds
+    // cap, fall back to the largest multiple that still fits
+    // (floor(cap/recipe)*recipe) so we never ask for more than the
+    // block can hold.
+    if (recipe > 0) {
+        target = Math.ceil(target / recipe) * recipe;
+        if (target > cap) target = Math.floor(cap / recipe) * recipe;
+    }
     return target;
 }
 
