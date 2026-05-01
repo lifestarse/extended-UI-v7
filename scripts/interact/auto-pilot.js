@@ -271,17 +271,22 @@ function findCoreFetchForConsumer(unit, team) {
     const probeUnit = Vars.player.unit();
 
     let chosenItem = null;
-    builds.each(b => {
-        if (chosenItem) return;
-        try {
-            const block = b.block;
-            if (!block || !consumerConfig.isEnabled(block)) return;
 
-            // Item turret with empty ammo: pick best ammo type the core
-            // supplies and the turret can actually receive.
-            if (block instanceof ItemTurret) {
-                if (!turretsOn) return;
-                if (!b.ammo || !b.ammo.isEmpty()) return;
+    // Pass 1: turrets get their own gating — any room (acceptStack>0)
+    // counts, not just fully-empty ammo. This is the "separate logic"
+    // turrets need: with the recipe-aware trigger non-turrets fire on
+    // (stock<recipe), partial-stock reconstructors and crafters would
+    // otherwise hog every fetch trip and turrets would just drain to
+    // empty waiting their turn. Iterating turrets first guarantees
+    // they get serviced before the iteration reaches a consumer that's
+    // also asking.
+    if (turretsOn) {
+        builds.each(b => {
+            if (chosenItem) return;
+            try {
+                const block = b.block;
+                if (!(block instanceof ItemTurret)) return;
+                if (!consumerConfig.isEnabled(block)) return;
                 if (!block.ammoTypes) return;
                 let pick = null;
                 block.ammoTypes.each((item, ammo) => {
@@ -292,10 +297,20 @@ function findCoreFetchForConsumer(unit, team) {
                     pick = item;
                 });
                 if (pick) chosenItem = pick;
-                return;
-            }
+            } catch (e) {}
+        });
+        if (chosenItem) {
+            return { x: core.x, y: core.y, b: core, item: chosenItem, expectsConsumer: false, kind: "core-fetch" };
+        }
+    }
 
-            // Generic consumers (crafters, generators, unit factories).
+    // Pass 2: non-turret consumers (crafters, generators, unit factories).
+    builds.each(b => {
+        if (chosenItem) return;
+        try {
+            const block = b.block;
+            if (!block || block instanceof ItemTurret) return;
+            if (!consumerConfig.isEnabled(block)) return;
             if (!block.consumers) return;
             const ci = block.consumers.find(c =>
                 c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic);

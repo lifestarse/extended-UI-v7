@@ -77,7 +77,11 @@ Events.run(Trigger.update, () => {
         let newRequest = null;
         if (!isCoreAvailible) return;
         if (block instanceof ItemTurret) {
-            if (!b.ammo.isEmpty()) return;
+            // Drop the strict "ammo empty" gate: getBestAmmo's
+            // acceptStack check already filters out turrets that
+            // can't take more of any ammo type, and waiting until a
+            // turret runs fully dry causes a firing pause that the
+            // user explicitly didn't want. Refill on any room.
             newRequest = getBestAmmo(b, core);
         } else if (block instanceof UnitFactory) {
             newRequest = getUnitFactoryRequest(b, block, core);
@@ -165,13 +169,17 @@ function computeFetchAmount(item, team, player) {
                 // the consumer already holds.
                 need = consumerConfig.getSmartBatchAmount(b, item) - stock;
             } else {
-                // Turrets store loaded ammo in b.ammo, not b.items, so
-                // the empty check must look at the ammo queue. Skip
-                // turrets with any ammo loaded.
-                if (!b.ammo || !b.ammo.isEmpty()) return;
-                need = consumerConfig.getSmartBatchAmount(b, item);
+                // Turrets get separate logic: trigger on any ammo
+                // room (acceptStack>0), not just fully-empty ammo.
+                // Otherwise partial-stock factories (Reconstructors,
+                // crafters) hog every fetch trip while turrets sit at
+                // low ammo waiting for the buffer to drain to 0. need
+                // is the actual room available so the drone fetches
+                // exactly what fits — no leftover residue.
+                if (!b.ammo) return;
+                need = b.acceptStack(item, droneCap, unit);
+                if (need <= 0) return;
             }
-            if (b.acceptStack(item, 1, unit) <= 0) return;
             if (need <= 0) return;
             if (total + need <= droneCap) total += need;
         } catch (e) {}
