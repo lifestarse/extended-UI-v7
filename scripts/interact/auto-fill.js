@@ -163,8 +163,15 @@ Events.run(Trigger.update, () => {
 // behavior unchanged.
 function computeFetchAmount(item, team, player) {
     const debugging = dbg();
-    if (consumerConfig.getFillPct() !== 0) {
-        if (debugging) dlog("computeFetchAmount(" + item.name + "): slider!=0 -> 999");
+    // Smart-fetch activates when either slider is at 0 % — that's the
+    // user's "fetch only what's actually needed" mode. With both at
+    // non-zero we fall back to 999 (legacy: drone takes a full load,
+    // delivers to whoever, dumps surplus). One slider at 0 % is enough
+    // to flip smart mode on for the whole fetch since an empty turret
+    // and an empty crafter wanting the same item should both be
+    // counted toward the same trip's sum.
+    if (consumerConfig.getFillPct() !== 0 && consumerConfig.getTurretFillPct() !== 0) {
+        if (debugging) dlog("computeFetchAmount(" + item.name + "): both sliders !=0 -> 999");
         return 999;
     }
     const unit = player.unit();

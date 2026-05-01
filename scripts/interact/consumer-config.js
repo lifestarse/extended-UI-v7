@@ -5,9 +5,12 @@ const LEGACY_TURRET_PRIORITY_PREFIX = "eui-turret-priority-";
 const MAX_PRIORITY = 999;
 const FILL_PCT_KEY = "eui-consumer-fill-pct";
 const DEFAULT_FILL_PCT = 50;
+const TURRET_FILL_PCT_KEY = "eui-turret-fill-pct";
+const DEFAULT_TURRET_FILL_PCT = 50;
 
 exports.MAX_PRIORITY = MAX_PRIORITY;
 exports.DEFAULT_FILL_PCT = DEFAULT_FILL_PCT;
+exports.DEFAULT_TURRET_FILL_PCT = DEFAULT_TURRET_FILL_PCT;
 exports.CATEGORIES = ["turrets", "crafters", "unit-factories", "generators", "other"];
 
 // Returns the configured fill threshold as a percentage of consumer
@@ -17,6 +20,21 @@ exports.CATEGORIES = ["turrets", "crafters", "unit-factories", "generators", "ot
 // consumers in the line.
 exports.getFillPct = function() {
     const v = Core.settings.getInt(FILL_PCT_KEY, DEFAULT_FILL_PCT);
+    if (v < 0) return 0;
+    if (v > 100) return 100;
+    return v;
+}
+
+// Same shape as getFillPct, scoped to ItemTurrets. Turrets behave
+// differently from crafters: they have no recipe, their ammo lives in
+// b.ammo (not b.items), and the user explicitly asked for separate
+// gating (the consumer-fill slider used to dictate turret loading too,
+// which led to either turrets being neglected when factories preempted
+// or the pyratite shuttle loop). With this slider the user can keep
+// crafters lean (low %) while keeping turrets topped up (high %), or
+// vice versa.
+exports.getTurretFillPct = function() {
+    const v = Core.settings.getInt(TURRET_FILL_PCT_KEY, DEFAULT_TURRET_FILL_PCT);
     if (v < 0) return 0;
     if (v > 100) return 100;
     return v;
@@ -158,7 +176,15 @@ exports.getTargetFill = function(b, item) {
     if (!b) return 0;
     const block = b.block;
     if (!block) return 0;
-    const pct = exports.getFillPct();
+    // Turrets read their own slider (eui-turret-fill-pct) — separate
+    // from the crafter fill slider so the user can tune ammo loading
+    // independently of factory top-up behavior. Both sliders share
+    // the same 0..100 % semantics; 0 % is the recipe-only / stock=0
+    // smart-batch trigger.
+    let pct = exports.getFillPct();
+    try {
+        if (block instanceof ItemTurret) pct = exports.getTurretFillPct();
+    } catch (e) {}
     const recipe = recipeMinForBuild(b, item);
     // Slider=0 % is the visit trigger for smart-batch mode: drone
     // intervenes only when the consumer can't run another cycle
