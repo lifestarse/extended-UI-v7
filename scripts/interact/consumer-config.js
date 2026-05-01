@@ -86,10 +86,23 @@ exports.getCapacityFor = function(block, item) {
     if (!block) return 0;
     try {
         if (block instanceof ItemTurret) {
-            if (item == null || !block.maxAmmo || !block.ammoTypes) return 0;
+            if (item == null || !block.ammoTypes) return 0;
             const ammoType = block.ammoTypes.get(item);
-            if (!ammoType || !ammoType.ammoMultiplier || ammoType.ammoMultiplier <= 0) return 0;
-            return Math.floor(block.maxAmmo / ammoType.ammoMultiplier);
+            if (!ammoType) return 0; // turret really doesn't accept this item
+            // Standard math: maxAmmo / ammoMultiplier = item-equivalent cap.
+            try {
+                if (block.maxAmmo > 0 && ammoType.ammoMultiplier > 0) {
+                    const cap = Math.floor(block.maxAmmo / ammoType.ammoMultiplier);
+                    if (cap > 0) return cap;
+                }
+            } catch (e) {}
+            // Fallback: turret accepts the item (ammoTypes.get returned
+            // non-null) but the ammo-math gave 0 (Rhino read maxAmmo or
+            // ammoMultiplier as 0, modded turret with unusual values,
+            // etc.). Use itemCapacity so downstream gates still consider
+            // the turret — without this, target collapses to 0 and the
+            // pyratite-loop the user reported triggers.
+            return block.itemCapacity || 0;
         }
     } catch (e) {}
     if (item != null && !consumesSpecificItem(block, item)) return 0;
@@ -177,7 +190,17 @@ exports.getTargetFill = function(b, item) {
     const cap = exports.getCapacityFor(block, item);
     if (cap <= 0) return 0;
     const slider = Math.floor(cap * pct / 100);
-    let target = Math.max(slider, recipe);
+    // Floor at 1 when the consumer genuinely accepts this item
+    // (cap > 0). Without it, low slider % on small-cap consumers
+    // collapses to 0 — e.g. swarmer + pyratite has cap=8, at slider=
+    // 5 % the math gives floor(0.4)=0, target=0, and findBestConsumer
+    // skips every swarmer at `stock=0 >= target=0`. Drone fetches
+    // pyratite from core, can't deliver to any swarmer, dumps back,
+    // loops. Treating target=0 as 'never visit' makes sense only when
+    // cap=0 (consumer doesn't accept the item) — but that path is
+    // already handled by the early return above. Inside the slider
+    // branch the floor is always 1.
+    let target = Math.max(1, slider, recipe);
     if (target > cap) target = cap;
     // Quantize up to a multiple of `recipe` so the buffer drains
     // exactly to 0 over N craft cycles. Round UP so the slider
