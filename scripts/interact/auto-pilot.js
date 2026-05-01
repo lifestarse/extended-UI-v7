@@ -321,8 +321,8 @@ function findCoreFetchForConsumer(unit, team) {
                 if (!block.ammoTypes) return;
                 let pick = null;
                 let pickReason = null;
+                let pickScore = -Infinity;
                 block.ammoTypes.each((item, ammo) => {
-                    if (pick) return;
                     if (!turretAmmoConfig.isEnabled(block, item)) {
                         if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): ammo disabled in config");
                         return;
@@ -349,8 +349,23 @@ function findCoreFetchForConsumer(unit, team) {
                         if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): stock=" + stock + ">=target=" + target);
                         return;
                     }
-                    pick = item;
-                    pickReason = "stock=" + stock + " target=" + target + " room=" + b.acceptStack(item, 1, probeUnit);
+                    // Score by ammo priority (dominant) and bullet
+                    // damage (tiebreaker) — same shape as
+                    // auto-fill.getBestAmmo. Without this, pass-1's
+                    // `if (pick) return` left whichever ammo type the
+                    // ammoTypes ObjectMap iterated first as the pick,
+                    // ignoring per-ammo priority entirely. Drone then
+                    // alternates between equally-empty ammo types,
+                    // which matched the user's "copper then silicon"
+                    // report.
+                    const damage = ammo.damage + ammo.splashDamage;
+                    const priority = turretAmmoConfig.getPriority(block, item);
+                    const score = priority * 100000 + damage;
+                    if (score > pickScore) {
+                        pick = item;
+                        pickScore = score;
+                        pickReason = "priority=" + priority + " damage=" + damage + " stock=" + stock + "/" + target;
+                    }
                 });
                 if (pick) {
                     chosenItem = pick;
