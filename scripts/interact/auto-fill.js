@@ -6,6 +6,9 @@ const turretAmmoConfig = require("extended-ui/interact/turret-ammo-config");
 const autoPilot = require("extended-ui/interact/auto-pilot");
 const logger = require("extended-ui/utils/logger").make("eui-af");
 const teamBuildingsCache = require("extended-ui/utils/team-buildings-cache");
+const turretFetchPending = require("extended-ui/utils/turret-fetch-pending");
+
+const FETCH_PENDING_TTL_SECONDS = 2.0;
 
 // Debug logging shares the auto-pilot toggle (see utils/logger.js) so
 // one switch covers the whole pipeline.
@@ -36,6 +39,10 @@ Events.run(Trigger.update, () => {
 
     let request = null;
     let requestPriority = -1;
+    // For FETCH (request is an Item) we need the originating turret so
+    // the pending-cache below knows who we asked for. Delivery sets
+    // request to the Building directly, no separate tracking needed.
+    let requestBuilding = null;
     let config = Core.settings.getJson("eui.autofill.priority", ObjectMap, () => new ObjectMap());
 
     const turretsOn = Core.settings.getBool("eui-auto-fill-turrets", true);
@@ -51,6 +58,18 @@ Events.run(Trigger.update, () => {
         // in the loop so getBestAmmo / acceptStack can do their thing.
         const isItemTurret = block instanceof ItemTurret;
         if (!isItemTurret && !block.consumers.find(c => c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic)) return;
+
+        // Skip if we just queued a Call.requestItem for this building and
+        // the drone isn't carrying that item yet. Lets the in-flight
+        // request actually complete instead of being re-issued every tick.
+        // If the drone already carries the pending item, fall through —
+        // we WANT the delivery branch to fire below.
+        const pendingEntry = turretFetchPending.get(b);
+        if (pendingEntry && !(stack.amount > 0 && stack.item === pendingEntry.item)) {
+            if (dbg()) dlog("range-iter " + bTag(b) + " skip: pending fetch of " + pendingEntry.item.name);
+            return;
+        }
+
         let blockPriority = config.get(block.name, 0);
         const custom = consumerConfig.getPriority(block);
         if (custom > 0) blockPriority = custom;
@@ -111,6 +130,7 @@ Events.run(Trigger.update, () => {
         if (newRequest) {
             if (dbg()) dlog("range-iter " + bTag(b) + " requests " + newRequest.name + " from core");
             request = newRequest;
+            requestBuilding = b;
             requestPriority = blockPriority;
         }
     });
@@ -118,6 +138,9 @@ Events.run(Trigger.update, () => {
     if (request instanceof Building) {
         if (dbg()) dlog("transfer " + (stack.item ? stack.item.name : "?") + "x" + stack.amount + " -> " + bTag(request));
         Call.transferInventory(player, request);
+        // Delivery succeeded for this turret as far as we asked — clear
+        // the pending entry so a follow-up request can fire next tick.
+        turretFetchPending.clear(request);
         timer.increase();
         return;
     }
@@ -153,6 +176,13 @@ Events.run(Trigger.update, () => {
         const amount = computeFetchAmount(request, team, player);
         if (dbg()) dlog("FETCH " + request.name + " x" + amount + " from core");
         Call.requestItem(player, core, request, amount);
+        // Mark the originating turret as pending so the next ticks skip
+        // it until the requestItem completes (or TTL expires). Without
+        // this, eui-action-delay=0 spams requestItem every render tick
+        // and the drone never catches up.
+        if (requestBuilding) {
+            turretFetchPending.markRequested(requestBuilding, request, FETCH_PENDING_TTL_SECONDS);
+        }
         timer.increase();
     }
 });
