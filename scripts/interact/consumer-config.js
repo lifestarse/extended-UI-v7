@@ -153,8 +153,16 @@ exports.getTargetFill = function(b, item) {
     // also why we don't Math.max(1, ...) here.
     const slider = Math.floor(cap * exports.getFillPct() / 100);
     const recipe = recipeMinForBuild(b, item);
-    const target = Math.max(slider, recipe);
-    return target > cap ? cap : target;
+    let target = Math.max(slider, recipe);
+    if (target > cap) target = cap;
+    // Quantize down to a multiple of `recipe` so the buffer drains
+    // exactly to 0 over N craft cycles. silicon-crucible has
+    // itemCapacity=30 and consumes 4 coal per craft — loading to 30
+    // leaves 2 coal stuck after 7 cycles (30 mod 4 = 2). Rounding
+    // target to floor(30/4)*4 = 28 makes the buffer drain cleanly so
+    // the drone's next refill starts from an empty slot.
+    if (recipe > 0) target = Math.floor(target / recipe) * recipe;
+    return target;
 }
 
 exports.isEnabled = function(block) {
