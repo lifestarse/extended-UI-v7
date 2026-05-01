@@ -21,7 +21,10 @@ let scanTick = RESCAN_TICKS;
 // this on for a few seconds and grepping last_log.txt for the block
 // name shows exactly which filter rejected it.
 function dbg() { return Core.settings.getBool("eui-debug-autopilot", false); }
-function dlog(s) { if (dbg()) try { print("[eui-ap] " + s); } catch (e) {} }
+// log() goes through Mindustry's Log facility and ends up in
+// last_log.txt; print() only writes to stdout, which the user can't
+// read after the fact.
+function dlog(s) { if (dbg()) try { log("[eui-ap] " + s); } catch (e) {} }
 function blockTag(b) {
     try { return b.block.name + "@" + b.tile.x + "," + b.tile.y; } catch (e) { return "?"; }
 }

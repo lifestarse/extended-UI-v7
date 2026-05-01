@@ -229,12 +229,20 @@ Events.on(EventType.ClientLoadEvent, () => {
         function hideAutoReset() {
             try {
                 const cells = contentTable.getCells();
-                if (cells && cells.size > 0) {
-                    const last = cells.peek();
-                    const elem = last.get();
-                    if (elem) elem.visible = false;
-                    last.size(0, 0).pad(0).space(0);
+                if (!cells || cells.size <= 0) return;
+                const last = cells.peek();
+                const elem = last.get();
+                if (elem) {
+                    try { elem.visible = false; } catch (e) {}
                 }
+                // Cell call chain in this Mindustry/Arc build doesn't
+                // always return Cell — last.size(0,0).pad(0).space(0)
+                // throws "Cannot find function space in object
+                // TextButton" because pad(0) here returns the actor.
+                // Make each call standalone with its own try/catch.
+                try { last.size(0, 0); } catch (e) {}
+                try { last.pad(0); } catch (e) {}
+                try { last.space(0); } catch (e) {}
             } catch (e) {
                 log("eui hide auto-reset: " + e);
             }
