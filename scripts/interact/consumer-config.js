@@ -150,16 +150,20 @@ exports.getTargetFill = function(b, item) {
     const pct = exports.getFillPct();
     const recipe = recipeMinForBuild(b, item);
     // Slider=0 % is the visit trigger for smart-batch mode: drone
-    // intervenes only when the consumer's stock is exactly 0. Anything
-    // higher is assumed to be receiving from an external supply
-    // (conveyor, another drone trip, leftover from the previous
-    // batch) and gets left alone — without this we'd "top up by 4"
-    // whenever a crucible drained to stock=24, rendering the slider's
-    // % logic moot. Returning 1 makes every existing `stock >= target`
-    // gate fire iff stock>=1, i.e., skip non-empty consumers. The
-    // actual delivery size lives in getSmartBatchAmount, which the
-    // auto-fill fetch path consults to size the from-core request.
-    if (pct === 0) return 1;
+    // intervenes only when the consumer can't run another cycle
+    // (stock < recipe). Anything at or above recipe is left alone —
+    // either it's running on its own stock or being topped up by an
+    // external feed (conveyor, another trip). For consumers without a
+    // fixed recipe (filter / turret) we fall back to "stock=0" as the
+    // trigger: returning 1 makes the existing `stock >= target` gate
+    // fire iff stock>=1.
+    //
+    // The previous strict stock=0 rule deadlocked Reconstructors: their
+    // per-cycle requirements are large (e.g. additive needs 40 silicon
+    // + 40 graphite per upgrade), so a partially-loaded reconstructor
+    // sits at silicon=20 / graphite=30 forever — neither input is
+    // exactly 0, but the factory still can't craft.
+    if (pct === 0) return recipe > 0 ? recipe : 1;
     const slider = Math.floor(cap * pct / 100);
     let target = Math.max(slider, recipe);
     if (target > cap) target = cap;

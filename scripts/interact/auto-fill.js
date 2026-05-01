@@ -115,16 +115,17 @@ Events.run(Trigger.update, () => {
     }
 });
 
-// Slider=0 % is "smart batch" mode: drone fetches exactly one full
-// clean batch per truly-empty consumer (stock=0). A consumer with
-// stock>0 is assumed to have an external supply (conveyor, another
-// trip) and is skipped — that's why we can't reuse `target - stock`
-// here, only the full smart-batch size counts.
-//   drone cap 30, two empty crucibles (28 each): fetch=28
+// Slider=0 % is "smart batch" mode: drone fetches exactly enough to
+// top each stuck consumer up to its smart-batch target (largest clean
+// multiple of recipe within cap). "Stuck" means stock < recipe — the
+// consumer can't start another cycle on its own. A consumer at or
+// above recipe is left alone (it can run, possibly fed externally).
+//   drone cap 30, two empty crucibles (need 28 each): fetch=28
 //     (first crucible fits, second trip handles the other)
-//   drone cap 30, three empty smelters (10 each): fetch=30
+//   drone cap 30, three empty smelters (need 10 each): fetch=30
 //   drone cap 70, two empty crucibles + one empty smelter: fetch=66
-//   any of those consumers at stock>0: not summed; if no consumer
+//   reconstructor with stock=20 / recipe=40 / smartBatch=80: need=60
+//   any consumer with stock >= recipe: skipped; if no consumer
 //     contributes we fall back to 999 (legacy behavior, lets the
 //     game-side cap handle it).
 // Other slider values keep the legacy "request 999, game caps"
@@ -146,22 +147,31 @@ function computeFetchAmount(item, team, player) {
             if (!block || !consumerConfig.isEnabled(block)) return;
             const isItemTurret = block instanceof ItemTurret;
             if (isItemTurret && !turretsOn) return;
+            let need = 0;
             if (!isItemTurret) {
                 if (!block.consumers) return;
                 if (!block.consumers.find(c =>
                     c instanceof ConsumeItems
                     || c instanceof ConsumeItemFilter
                     || c instanceof ConsumeItemDynamic)) return;
-                // stock=0 only — anything else means external supply.
-                if (b.items && b.items.get(item) !== 0) return;
+                // Trigger when the consumer can't run another cycle
+                // (stock < recipe via getTargetFill at slider=0 %).
+                const target = consumerConfig.getTargetFill(b, item);
+                if (target <= 0) return;
+                const stock = b.items ? b.items.get(item) : 0;
+                if (stock >= target) return;
+                // Top up to the smart-batch target so the buffer
+                // drains cleanly. need = clean batch size minus what
+                // the consumer already holds.
+                need = consumerConfig.getSmartBatchAmount(b, item) - stock;
             } else {
                 // Turrets store loaded ammo in b.ammo, not b.items, so
                 // the empty check must look at the ammo queue. Skip
                 // turrets with any ammo loaded.
                 if (!b.ammo || !b.ammo.isEmpty()) return;
+                need = consumerConfig.getSmartBatchAmount(b, item);
             }
             if (b.acceptStack(item, 1, unit) <= 0) return;
-            const need = consumerConfig.getSmartBatchAmount(b, item);
             if (need <= 0) return;
             if (total + need <= droneCap) total += need;
         } catch (e) {}
