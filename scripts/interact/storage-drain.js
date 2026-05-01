@@ -28,6 +28,7 @@ exports.findDrainSource = function(team) {
     if (!data || !data.buildings) return null;
     const cap = droneItemCap();
     let best = null;
+    let bestPriority = -1;
     let bestStock = 0;
     data.buildings.each(b => {
         try {
@@ -36,7 +37,9 @@ exports.findDrainSource = function(team) {
             if (!item || !b.items) return;
             const stock = b.items.get(item);
             if (cap > 0 && stock < cap) return;
-            if (stock > bestStock) {
+            const prio = storageConfig.getPriority(b);
+            if (prio > bestPriority || (prio === bestPriority && stock > bestStock)) {
+                bestPriority = prio;
                 bestStock = stock;
                 best = { x: b.x, y: b.y, b: b, item: item, expectsConsumer: false, kind: "drain-fetch" };
             }

@@ -50,6 +50,7 @@ function resetStorageSettings() {
         builds.each(b => {
             try {
                 if (!storageFill.isManagedStorage(b.block)) return;
+                Core.settings.remove("eui-storage-priority-" + b.tile.x + "_" + b.tile.y);
                 Vars.content.items().each(item => {
                     Core.settings.remove("eui-storage-fill-" + b.tile.x + "_" + b.tile.y + "-" + item.name);
                     Core.settings.remove("eui-storage-drain-" + b.tile.x + "_" + b.tile.y + "-" + item.name);
@@ -441,8 +442,13 @@ function buildStorageListDialog() {
     dialog.addCloseButton();
     addStandardReset(dialog, () => {
         resetStorageSettings();
+        clipboard = null;
         rebuild();
     });
+
+    // In-dialog clipboard for the copy/paste UX. Cleared on reset and on
+    // dialog close so a stale snapshot doesn't outlive a session.
+    let clipboard = null;
 
     let listTable = null;
     dialog.cont.add(Core.bundle.get("eui.storage.hint")).width(580).wrap().pad(6).get().setAlignment(Align.center);
@@ -470,7 +476,13 @@ function buildStorageListDialog() {
             return;
         }
 
-        storages.sort((a, b) => (a.tile.y * 10000 + a.tile.x) - (b.tile.y * 10000 + b.tile.x));
+        // Sort by descending priority first, then tile coords for stability.
+        storages.sort((a, b) => {
+            const pa = storageConfig.getPriority(a);
+            const pb = storageConfig.getPriority(b);
+            if (pa !== pb) return pb - pa;
+            return (a.tile.y * 10000 + a.tile.x) - (b.tile.y * 10000 + b.tile.x);
+        });
         for (let i = 0; i < storages.length; i++) {
             addStorageRow(listTable, storages[i]);
         }
@@ -487,6 +499,28 @@ function buildStorageListDialog() {
                 ? Core.bundle.format("eui.storage.row-summary", configured)
                 : Core.bundle.get("eui.storage.row-empty")).pad(4);
 
+            // Priority field (default 0). Higher first when the autopilot
+            // picks a storage to fill / drain.
+            const priorityField = row.field(storageConfig.getPriority(building) + "", text => {
+                const v = parseInt(text);
+                if (!isNaN(v)) {
+                    storageConfig.setPriority(building, Math.max(0, Math.min(storageConfig.MAX_PRIORITY, v)));
+                }
+            });
+            priorityField.valid(text => /^\d+$/.test(text) && parseInt(text) <= storageConfig.MAX_PRIORITY);
+            priorityField.width(70).pad(4).tooltip(Core.bundle.get("eui.storage.priority-tooltip"));
+
+            row.button(Icon.copy, Styles.cleari, () => {
+                clipboard = storageConfig.snapshot(building);
+            }).size(36).pad(4).tooltip(Core.bundle.get("eui.storage.copy-tooltip"));
+
+            row.button(Icon.paste, Styles.cleari, () => {
+                if (!clipboard) return;
+                storageConfig.applySnapshot(building, clipboard);
+                rebuild();
+            }).size(36).pad(4).tooltip(Core.bundle.get("eui.storage.paste-tooltip"))
+              .update(c => { c.setDisabled(clipboard == null); });
+
             row.button(Icon.pencil, Styles.cleari, () => {
                 storageEditDialog.build(building, () => rebuild()).show();
             }).size(36).pad(4);
@@ -495,6 +529,7 @@ function buildStorageListDialog() {
     }
 
     dialog.shown(() => rebuild());
+    dialog.hidden(() => { clipboard = null; });
     return dialog;
 }
 

@@ -180,6 +180,7 @@ function findBestStorageNeed(unit, item, team) {
     const builds = teamBuildings(team);
     if (!builds) return null;
     let bestB = null;
+    let bestPriority = -1;
     let bestDeficit = 0;
     const cap = (unit.type && unit.type.itemCapacity) || 0;
     builds.each(b => {
@@ -193,7 +194,11 @@ function findBestStorageNeed(unit, item, team) {
             const deficit = threshold - stock;
             if (cap > 0 && deficit < cap) return;
             if (b.acceptStack(item, 5, unit) < 5) return;
-            if (deficit > bestDeficit) {
+            // Priority dominates; deficit breaks ties so the same-priority
+            // storage with the larger gap gets visited first.
+            const prio = storageConfig.getPriority(b);
+            if (prio > bestPriority || (prio === bestPriority && deficit > bestDeficit)) {
+                bestPriority = prio;
                 bestDeficit = deficit;
                 bestB = b;
             }
@@ -209,18 +214,26 @@ function findCoreFetchForStorage(unit, team) {
     const builds = teamBuildings(team);
     if (!builds) return null;
     const cap = (unit.type && unit.type.itemCapacity) || 0;
-    let chosen = null;
+    // Highest-priority storage with a needed item the core can supply
+    // wins. Without the priority sort, the iteration order of the team
+    // building list decides which storage gets fed first.
+    let chosenItem = null;
+    let chosenPriority = -1;
     builds.each(b => {
-        if (chosen) return;
         try {
             if (!storageFill.isManagedStorage(b.block)) return;
             const item = storageConfig.findNeededItem(b, it =>
                 core.items.get(it) >= coreLimits.getLimit(it), cap);
-            if (item) chosen = item;
+            if (!item) return;
+            const prio = storageConfig.getPriority(b);
+            if (prio > chosenPriority) {
+                chosenPriority = prio;
+                chosenItem = item;
+            }
         } catch (e) {}
     });
-    if (!chosen) return null;
-    return { x: core.x, y: core.y, b: core, item: chosen, expectsConsumer: false, kind: "core-fetch" };
+    if (!chosenItem) return null;
+    return { x: core.x, y: core.y, b: core, item: chosenItem, expectsConsumer: false, kind: "core-fetch" };
 }
 
 // Pick an item the drone should fetch from the core to feed a consumer
