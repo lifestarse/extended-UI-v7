@@ -78,7 +78,7 @@ Events.run(Trigger.update, () => {
         if (!isCoreAvailible) return;
         if (block instanceof ItemTurret) {
             if (!b.ammo.isEmpty()) return;
-            newRequest = getBestAmmo(block, core);
+            newRequest = getBestAmmo(b, core);
         } else if (block instanceof UnitFactory) {
             newRequest = getUnitFactoryRequest(b, block, core);
         } else if (b.items) {
@@ -181,7 +181,8 @@ function computeFetchAmount(item, team, player) {
     return total > 0 ? total : 999;
 }
 
-function getBestAmmo(turret, core) {
+function getBestAmmo(turretBuild, core) {
+    const turret = turretBuild.block;
     let best = null;
     let bestScore = -Infinity;
     const probeUnit = Vars.player.unit();
@@ -192,7 +193,11 @@ function getBestAmmo(turret, core) {
         // multi-ammo turrets (e.g. double turret) tell us "I want
         // graphite" even when their graphite slot is full, the drone
         // fetches from core, can't deliver, dumps back, and loops.
-        if (turret.acceptStack(item, 1, probeUnit) <= 0) return;
+        // acceptStack lives on the Building, not the Block — the old
+        // signature took the Block here and crashed with "Cannot find
+        // function acceptStack in object duo" the moment a turret
+        // with empty ammo entered the auto-fill loop.
+        if (turretBuild.acceptStack(item, 1, probeUnit) <= 0) return;
         const damage = ammo.damage + ammo.splashDamage;
         const priority = turretAmmoConfig.getPriority(turret, item);
         // Priority dominates when set; damage breaks ties (and is the
