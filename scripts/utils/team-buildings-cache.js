@@ -25,11 +25,26 @@ function bumpFromTile(tile) {
     try { bumpForTeam(tile.team()); } catch (e) {}
 }
 
-Events.on(BlockBuildEndEvent, e => { if (e) bumpFromTile(e.tile); });
-Events.on(BlockDestroyEvent, e => { if (e) bumpFromTile(e.tile); });
-Events.on(WorldLoadEvent, () => {
-    for (const k in versions) delete versions[k];
-    for (const k in cache) delete cache[k];
+// EventType.* is the safe path here — bare BlockBuildEndEvent isn't
+// exposed as a global in every Mindustry build. Each handler is also
+// wrapped so a missing event class on an older version can't take the
+// whole module down (and through the require cycle, drag auto-pilot
+// down with it — that's how this file crashed storage-drain.js#65
+// with "Cannot find function getTarget" on first load).
+function safeOn(evt, fn) {
+    try { if (evt) Events.on(evt, fn); } catch (e) { try { log("eui team-buildings-cache: " + e); } catch (ee) {} }
+}
+function clearObj(o) {
+    // for (const k in o) is parse-error in this Mindustry's Rhino when
+    // two such loops sit in the same scope ("redeclaration of const k").
+    // Object.keys + forEach sidesteps that and stays ES5-friendly.
+    Object.keys(o).forEach(k => delete o[k]);
+}
+safeOn(EventType.BlockBuildEndEvent, e => { if (e) bumpFromTile(e.tile); });
+safeOn(EventType.BlockDestroyEvent, e => { if (e) bumpFromTile(e.tile); });
+safeOn(EventType.WorldLoadEvent, () => {
+    clearObj(versions);
+    clearObj(cache);
 });
 
 function snapshot(team) {
