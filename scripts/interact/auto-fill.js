@@ -81,7 +81,7 @@ Events.run(Trigger.update, () => {
                 // to request a different ammo for this turret.
             } else {
                 const target = consumerConfig.getTargetFill(b, stack.item);
-                const stock = b.items ? b.items.get(stack.item) : 0;
+                const stock = consumerConfig.getItemStock(b, stack.item);
                 const accepted = b.acceptStack(stack.item, stack.amount, player.unit());
                 if (stock < target && accepted > 0) {
                     if (dbg()) dlog("range-iter " + bTag(b) + " wants " + stack.item.name + " (stock=" + stock + " target=" + target + " accepted=" + accepted + ")");
@@ -211,7 +211,7 @@ function computeFetchAmount(item, team, player) {
                 // (stock < recipe via getTargetFill at slider=0 %).
                 const target = consumerConfig.getTargetFill(b, item);
                 if (target <= 0) return;
-                const stock = b.items ? b.items.get(item) : 0;
+                const stock = consumerConfig.getItemStock(b, item);
                 if (stock >= target) {
                     if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): stock=" + stock + ">=target=" + target);
                     return;
@@ -233,8 +233,15 @@ function computeFetchAmount(item, team, player) {
                     if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): ammo disabled in turret config");
                     return;
                 }
-                if (consumerConfig.turretHasItemAmmo(b, item)) {
-                    if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): turret has this ammo loaded");
+                // Slider gate via real ammo stock — items[] is always 0
+                // for turrets, so without getItemStock the slider is
+                // effectively ignored and drone refills 1 unit per
+                // visit regardless of %.
+                const tTarget = consumerConfig.getTargetFill(b, item);
+                if (tTarget <= 0) return;
+                const tStock = consumerConfig.getItemStock(b, item);
+                if (tStock >= tTarget) {
+                    if (debugging) dlog("computeFetch " + bTag(b) + " skip(" + item.name + "): stock=" + tStock + ">=target=" + tTarget);
                     return;
                 }
                 need = b.acceptStack(item, droneCap, unit);
@@ -288,12 +295,15 @@ function getBestAmmo(turretBuild, core) {
         // function acceptStack in object duo" the moment a turret
         // with empty ammo entered the auto-fill loop.
         if (turretBuild.acceptStack(item, 1, probeUnit) <= 0) return;
-        // Skip ammo the turret already has loaded — assume an external
-        // supply is feeding it. Otherwise drone races the conveyor:
-        // fetches pyratite, conveyor adds pyratite first, drone arrives
-        // full and dumps back to core. Only fetch when the buffer is
-        // genuinely empty for this specific ammo type.
-        if (consumerConfig.turretHasItemAmmo(turretBuild, item)) return;
+        // Slider gate: skip when the turret already holds at least
+        // 'target' worth of this ammo. At slider=0 % target=1 so any
+        // loaded ammo skips (drone helps only when truly empty); at
+        // higher % the threshold scales with cap. Reading getItemStock
+        // (b.ammo aware) — not items[] (always 0 for turrets) — is
+        // what makes the slider actually do anything.
+        const ggTarget = consumerConfig.getTargetFill(turretBuild, item);
+        const ggStock = consumerConfig.getItemStock(turretBuild, item);
+        if (ggStock >= ggTarget) return;
         const damage = ammo.damage + ammo.splashDamage;
         const priority = turretAmmoConfig.getPriority(turret, item);
         // Priority dominates when set; damage breaks ties (and is the
@@ -315,7 +325,7 @@ function getBestAmmo(turretBuild, core) {
 function consumerWantsItem(build, item) {
     try {
         const target = consumerConfig.getTargetFill(build, item);
-        const stock = build.items ? build.items.get(item) : 0;
+        const stock = consumerConfig.getItemStock(build, item);
         if (stock >= target) return false;
         return build.acceptStack(item, 1, Vars.player.unit()) > 0;
     } catch (e) { return false; }

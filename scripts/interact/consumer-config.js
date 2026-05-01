@@ -305,25 +305,32 @@ exports.categorize = function(block) {
     return "other";
 }
 
-// True when the turret build's ammo queue already contains an entry for
-// `item`. We use this on the fetch side (auto-fill / auto-pilot) to skip
-// ammo types the turret is already getting from somewhere — a conveyor,
-// another drone, manually placed by the player. Without this check the
-// drone races the external feed: pass-1 picks the ammo type because
-// `acceptStack > 0` for one tick, drone trips to core, conveyor fills
-// the gap, drone arrives with items it can't deliver and dumps them
-// back. Pure same-ammo loop. The trade-off: drone won't refill an ammo
-// type as long as any of it is loaded, even if the user prioritized it
-// — once the buffer drains to 0 the next fetch happens.
-exports.turretHasItemAmmo = function(b, item) {
-    if (!b || !b.ammo || !item) return false;
-    let found = false;
+// Item-equivalent stock of `item` currently held by `b`. For most
+// blocks this is just b.items.get(item). For ItemTurret it walks the
+// ammo queue and sums entry.amount for entries matching the item —
+// turrets store ammo in b.ammo, NOT b.items (handleStack converts
+// items into AmmoEntry without ever populating items[]). Reading
+// b.items.get(pyratite) on a turret returns 0 even when the turret
+// is full of pyratite ammo, so the slider's `stock < target` gate
+// is permanently satisfied and drone refills the turret 1 item at a
+// time on every visit, regardless of slider %. With this helper the
+// gate compares against actual ammo and the slider behaves as
+// labeled.
+exports.getItemStock = function(b, item) {
+    if (!b || !item) return 0;
     try {
-        b.ammo.each(entry => {
-            if (entry && entry.item === item) found = true;
-        });
+        if (b.block instanceof ItemTurret) {
+            if (!b.ammo) return 0;
+            let total = 0;
+            b.ammo.each(entry => {
+                if (entry && entry.item === item && entry.amount > 0) total += entry.amount;
+            });
+            return total;
+        }
     } catch (e) {}
-    return found;
+    if (!b.items) return 0;
+    const v = b.items.get(item);
+    return v == null ? 0 : v;
 }
 
 exports.consumesItems = function(block) {

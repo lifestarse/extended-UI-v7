@@ -111,7 +111,7 @@ function isStale(target, unit) {
         // a full batch" — a drone with 3 items left should still finish
         // delivering to a consumer that needs more.
         const tgt = consumerConfig.getTargetFill(target.b, stack.item);
-        const stk = target.b.items ? target.b.items.get(stack.item) : 0;
+        const stk = consumerConfig.getItemStock(target.b, stack.item);
         if (stk >= tgt) return true;
         return target.b.acceptStack(stack.item, 1, unit) <= 0;
     }
@@ -335,18 +335,22 @@ function findCoreFetchForConsumer(unit, team) {
                         if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): acceptStack=0");
                         return;
                     }
-                    // Skip ammo the turret already has loaded — assume
-                    // external feed (conveyor, another drone trip) is
-                    // supplying it. Without this gate the drone races
-                    // the conveyor: pass-1 picks the type because
-                    // acceptStack>0 for a tick, by arrival the conveyor
-                    // has filled the gap, drone dumps to core. Loop.
-                    if (consumerConfig.turretHasItemAmmo(b, item)) {
-                        if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): turret already has this ammo loaded");
+                    // Slider gate: skip if turret already has at least
+                    // 'target' worth of this ammo loaded. Reading the
+                    // actual ammo queue (getItemStock) — not items[],
+                    // which is always 0 for turrets — is what makes
+                    // the slider mean what it says. At slider=0 %
+                    // target=1 so any loaded ammo skips (drone helps
+                    // only at empty); at slider=100 % target=cap so
+                    // drone refills constantly.
+                    const target = consumerConfig.getTargetFill(b, item);
+                    const stock = consumerConfig.getItemStock(b, item);
+                    if (stock >= target) {
+                        if (debugging) dlog("fetch-pass1 " + blockTag(b) + " skip(" + item.name + "): stock=" + stock + ">=target=" + target);
                         return;
                     }
                     pick = item;
-                    pickReason = "acceptStack=" + b.acceptStack(item, 1, probeUnit);
+                    pickReason = "stock=" + stock + " target=" + target + " room=" + b.acceptStack(item, 1, probeUnit);
                 });
                 if (pick) {
                     chosenItem = pick;
@@ -378,7 +382,7 @@ function findCoreFetchForConsumer(unit, team) {
             // it physically accepts the item right now. Otherwise the
             // drone fetches an item it can't deliver (consumer's slot is
             // already at target) and shuttles it back to the core.
-            const stockOf = (item) => b.items ? b.items.get(item) : 0;
+            const stockOf = (item) => consumerConfig.getItemStock(b, item);
             const wants = (item) => {
                 const target = consumerConfig.getTargetFill(b, item);
                 if (stockOf(item) >= target) return false;
@@ -466,7 +470,7 @@ function findBestConsumer(unit, item, team) {
             // and the autopilot kept fetching from core only to dump
             // back ("shuttle" loop).
             const target = consumerConfig.getTargetFill(b, item);
-            const stock = b.items ? b.items.get(item) : 0;
+            const stock = consumerConfig.getItemStock(b, item);
             if (stock >= target) {
                 if (debugging) dlog(blockTag(b) + " skip(" + item.name + "): stock=" + stock + " >= target=" + target);
                 return;
