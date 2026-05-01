@@ -316,9 +316,24 @@ function findCoreFetchForConsumer(unit, team) {
     const pass1 = { turrets: 0, disabled: 0, coreLow: 0, noRoom: 0, stocked: 0 };
     let pass1Reason = null;
 
+    // Score by ammo priority (dominant) * 100000 + bullet damage —
+    // same shape as auto-fill.getBestAmmo. Lifted to module scope so
+    // both the per-turret ammo pick and the cross-turret tiebreak
+    // share one formula.
+    function ammoScore(block, item, ammo) {
+        const damage = ammo.damage + ammo.splashDamage;
+        const priority = turretAmmoConfig.getPriority(block, item);
+        return priority * 100000 + damage;
+    }
+
     if (turretsOn) {
+        // Cross-turret scoring: pick the highest-scoring ammo trip
+        // across ALL turrets, not the first turret iteration order
+        // hits. Without this, with two empty turrets — say a duo
+        // (copper) and a salvo (graphite) — pass-1 fed whichever the
+        // Seq enumerated first regardless of priority.
+        let bestScore = -Infinity;
         builds.each(b => {
-            if (chosenItem) return;
             try {
                 const block = b.block;
                 if (!(block instanceof ItemTurret)) return;
@@ -343,27 +358,17 @@ function findCoreFetchForConsumer(unit, team) {
                     const target = consumerConfig.getTargetFill(b, item);
                     const stock = consumerConfig.getItemStock(b, item);
                     if (stock >= target) { pass1.stocked++; return; }
-                    // Score by ammo priority (dominant) and bullet
-                    // damage (tiebreaker) — same shape as
-                    // auto-fill.getBestAmmo. Without this, pass-1's
-                    // `if (pick) return` left whichever ammo type the
-                    // ammoTypes ObjectMap iterated first as the pick,
-                    // ignoring per-ammo priority entirely. Drone then
-                    // alternates between equally-empty ammo types,
-                    // which matched the user's "copper then silicon"
-                    // report.
-                    const damage = ammo.damage + ammo.splashDamage;
-                    const priority = turretAmmoConfig.getPriority(block, item);
-                    const score = priority * 100000 + damage;
+                    const score = ammoScore(block, item, ammo);
                     if (score > pickScore) {
                         pick = item;
                         pickScore = score;
-                        pickReason = "priority=" + priority + " damage=" + damage + " stock=" + stock + "/" + target;
+                        pickReason = "score=" + score + " stock=" + stock + "/" + target;
                     }
                 });
-                if (pick) {
+                if (pick && pickScore > bestScore) {
                     chosenItem = pick;
                     chosenBuild = b;
+                    bestScore = pickScore;
                     pass1Reason = pickReason;
                 }
             } catch (e) {}
