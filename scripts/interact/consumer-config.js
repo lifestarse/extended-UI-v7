@@ -149,18 +149,17 @@ exports.getTargetFill = function(b, item) {
     if (cap <= 0) return 0;
     const pct = exports.getFillPct();
     const recipe = recipeMinForBuild(b, item);
-    // Slider=0 % is "smart batch" mode: target = largest multiple of
-    // recipe that fits in the consumer's capacity, so each delivery
-    // drains cleanly to 0. The fetch path in auto-fill.js sums these
-    // per-consumer targets across reachable consumers and pulls
-    // exactly that much from the core. crucible coal at slider=0 %:
-    // floor(30/4)*4 = 28 — not the recipe min (4), not cap (30).
-    // Filter / turret consumers without a fixed recipe fall back to
-    // cap (deliver as much as fits).
-    if (pct === 0) {
-        if (recipe > 0) return Math.floor(cap / recipe) * recipe;
-        return cap;
-    }
+    // Slider=0 % is the visit trigger for smart-batch mode: drone
+    // intervenes only when the consumer's stock is exactly 0. Anything
+    // higher is assumed to be receiving from an external supply
+    // (conveyor, another drone trip, leftover from the previous
+    // batch) and gets left alone — without this we'd "top up by 4"
+    // whenever a crucible drained to stock=24, rendering the slider's
+    // % logic moot. Returning 1 makes every existing `stock >= target`
+    // gate fire iff stock>=1, i.e., skip non-empty consumers. The
+    // actual delivery size lives in getSmartBatchAmount, which the
+    // auto-fill fetch path consults to size the from-core request.
+    if (pct === 0) return 1;
     const slider = Math.floor(cap * pct / 100);
     let target = Math.max(slider, recipe);
     if (target > cap) target = cap;
@@ -173,6 +172,22 @@ exports.getTargetFill = function(b, item) {
         if (target > cap) target = Math.floor(cap / recipe) * recipe;
     }
     return target;
+}
+
+// Size of one smart-batch delivery to a consumer at slider=0 %:
+// largest multiple of recipe that fits in cap (so the buffer drains
+// cleanly to 0 again). Filter / turret consumers without a fixed
+// recipe fall back to cap. Drives the fetch-from-core size in
+// auto-fill.computeFetchAmount.
+exports.getSmartBatchAmount = function(b, item) {
+    if (!b) return 0;
+    const block = b.block;
+    if (!block) return 0;
+    const cap = exports.getCapacityFor(block, item);
+    if (cap <= 0) return 0;
+    const recipe = recipeMinForBuild(b, item);
+    if (recipe > 0) return Math.floor(cap / recipe) * recipe;
+    return cap;
 }
 
 exports.isEnabled = function(block) {
