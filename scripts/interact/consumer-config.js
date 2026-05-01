@@ -145,8 +145,6 @@ exports.getTargetFill = function(b, item) {
     if (!b) return 0;
     const block = b.block;
     if (!block) return 0;
-    const cap = exports.getCapacityFor(block, item);
-    if (cap <= 0) return 0;
     const pct = exports.getFillPct();
     const recipe = recipeMinForBuild(b, item);
     // Slider=0 % is the visit trigger for smart-batch mode: drone
@@ -163,7 +161,21 @@ exports.getTargetFill = function(b, item) {
     // + 40 graphite per upgrade), so a partially-loaded reconstructor
     // sits at silicon=20 / graphite=30 forever — neither input is
     // exactly 0, but the factory still can't craft.
+    //
+    // This branch deliberately runs *before* the cap check below — for
+    // ItemTurrets in particular, getCapacityFor depends on
+    // block.maxAmmo and ammoType.ammoMultiplier; if either reads back
+    // as 0 from Rhino for any quirky turret/ammo combo, getCapacityFor
+    // returns 0, target would land at 0, and findBestConsumer's
+    // `stock >= target` test fires at `0 >= 0` and skips the turret.
+    // Pass-1 still picks it (uses acceptStack directly), drone fetches
+    // ammo, but no consumer-deliver candidate exists — only core-dump
+    // does, and the dump loop the user reported kicks in. The
+    // capacity is irrelevant for the trigger threshold; downstream
+    // acceptStack handles the actual room check anyway.
     if (pct === 0) return recipe > 0 ? recipe : 1;
+    const cap = exports.getCapacityFor(block, item);
+    if (cap <= 0) return 0;
     const slider = Math.floor(cap * pct / 100);
     let target = Math.max(slider, recipe);
     if (target > cap) target = cap;
