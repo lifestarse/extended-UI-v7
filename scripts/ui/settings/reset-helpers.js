@@ -1,10 +1,6 @@
-// Per-sub-dialog reset helpers — each one removes only the prefix-keyed
-// Core.settings entries that its own dialog owns. Keys are enumerated
-// from Vars.content (items, blocks, team buildings, task list) instead
-// of walking Core.settings.values, because the values map's key
-// iterator (orderedKeys/keys) doesn't behave reliably from Rhino in
-// this Mindustry build — earlier prefix-sweep attempts looked like the
-// reset button "did nothing".
+// Per-sub-dialog reset helpers. Keys are enumerated from Vars.content
+// rather than Core.settings.values — the latter's key iterator is
+// unreliable from Rhino on this Mindustry build.
 
 const coreLimits = require("extended-ui/interact/core-limits");
 const storageFill = require("extended-ui/interact/storage-fill");
@@ -25,9 +21,8 @@ function resetCollectTargetsSettings() {
 }
 
 function resetStorageSettings() {
-    // Sweep currently-owned storages by their tile coords. Keys for
-    // destroyed storages are inert (no building -> no UI -> no behaviour),
-    // so leaving them is acceptable.
+    // Keys for destroyed storages are inert (no building -> no UI), so
+    // leaving them is fine.
     try {
         const team = Vars.player ? Vars.player.team() : null;
         const data = team ? team.data() : null;

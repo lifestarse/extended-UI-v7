@@ -14,12 +14,8 @@ exports.isItemReservedForStorage = function(item, team) {
     if (!data || !data.buildings) return false;
     const autopilot = Core.settings.getBool("eui-auto-pilot", false);
     const player = Vars.player;
-    // Mirror the deficit-vs-capacity guard from auto-pilot's
-    // findBestStorageNeed: a storage whose remaining deficit is smaller
-    // than the drone's full inventory will never get visited anyway, so
-    // it must NOT reserve the item — otherwise the drone keeps the
-    // stack forever (storage thinks it's still wanted, can't deliver
-    // because deficit < cap, can't dump to core because reserved).
+    // Storages whose deficit is smaller than the drone's full inventory
+    // never get visited, so they must NOT hold an item reservation.
     const droneCap = (player && player.unit() && player.unit().type
         && player.unit().type.itemCapacity) || 0;
     let reserved = false;

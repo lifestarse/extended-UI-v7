@@ -30,14 +30,8 @@ Events.on(EventType.ClientLoadEvent, () => {
             contentTable = new SettingsMenuDialog.SettingsTable();
         }
 
-        // Track every pref name so the custom reset below can remove it.
-        // We replace SettingsTable's auto-appended "reset to defaults"
-        // entirely: it has no confirm in this Mindustry build, and its
-        // loop only walks these prefs (not the sub-dialog configs the
-        // user also wants cleared). Resetting via Core.settings.remove
-        // sidesteps the Rhino-Double pitfall (Core.settings.put with a
-        // JS number crashes — getInt/getBool read defaults instead when
-        // the key is absent, so rebuild() restores the slider/check UIs).
+        // Reset goes through Core.settings.remove — Core.settings.put
+        // with a JS number is a Rhino-Double crash.
         const REGISTERED_PREF_NAMES = [];
         const checkPref = (name, def) => {
             REGISTERED_PREF_NAMES.push(name);
@@ -89,13 +83,9 @@ Events.on(EventType.ClientLoadEvent, () => {
             checkPref("eui-DragPathfind", false);
         }
 
-        // Register sub-dialog buttons as proper Settings via pref() so the
-        // SettingsTable's auto-rebuild slots them in BEFORE the trailing
-        // "reset to defaults" button. Falls back to a plain .button() append
-        // if the Setting subclass can't be created on this Mindustry build.
-        // Cells use .left() so the buttons line up under the same flush-left
-        // column as the checkPref / sliderPref labels above instead of
-        // floating in the middle of the pane.
+        // pref() registration places buttons before the auto-reset; the
+        // .button() fallback is for Mindustry builds without the Setting
+        // subclass.
         function pushButton(labelKey, dialog) {
             try {
                 const Setting = SettingsMenuDialog.SettingsTable.Setting;
@@ -119,14 +109,7 @@ Events.on(EventType.ClientLoadEvent, () => {
         pushButton("eui.storage.open", storageListDialog);
         pushButton("eui.task-priority.open", taskPriorityDialog);
 
-        // Replace SettingsTable's auto-appended reset:
-        // 1. Hide the trailing auto-reset cell (size 0 + invisible).
-        // 2. Append our own button at the end, sized like the sub-dialog
-        //    buttons above it (Arc otherwise picks a min-width that wraps
-        //    "Сбросить по умолчанию" one character per line).
-        // 3. Click handler runs through showConfirm before doing anything,
-        //    then resets every registered pref AND every sub-dialog config,
-        //    rebuilds the table, and re-applies steps 1-2.
+        // Hide the auto-reset cell, append our own with showConfirm.
         function hideAutoReset() {
             try {
                 const cells = contentTable.getCells();
@@ -136,11 +119,8 @@ Events.on(EventType.ClientLoadEvent, () => {
                 if (elem) {
                     try { elem.visible = false; } catch (e) {}
                 }
-                // Cell call chain in this Mindustry/Arc build doesn't
-                // always return Cell — last.size(0,0).pad(0).space(0)
-                // throws "Cannot find function space in object
-                // TextButton" because pad(0) here returns the actor.
-                // Make each call standalone with its own try/catch.
+                // Cell chain doesn't always return Cell here — pad(0)
+                // can return the actor. Standalone try/catch each call.
                 try { last.size(0, 0); } catch (e) {}
                 try { last.pad(0); } catch (e) {}
                 try { last.space(0); } catch (e) {}

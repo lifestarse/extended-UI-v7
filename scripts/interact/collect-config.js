@@ -22,15 +22,10 @@ exports.setDrillItemEnabled = function(item, value) {
 
 // % of the producer's *achievable* output cap. For a GenericCrafter
 // the output buffer never reaches itemCapacity in practice — the
-// crafter stalls one craft cycle before that (next craft would
-// overflow itemCapacity, so it can't run). The steady-state max for
-// the matching output is itemCapacity - craftAmount: at that stock
-// the next craft can still fit, then briefly hits cap and gets pulled
-// back down. silicon-crucible has itemCapacity=30 and silicon
-// craftAmount=6, so silicon caps at 24 — a 100 % slider must trigger
-// at 24, not 30, otherwise the drone never collects from it. Drills
-// (no craftAmount) keep using itemCapacity directly; producing 1 unit
-// at a time, they really do reach cap before stalling.
+// GenericCrafter steady-state max per output item is
+// itemCapacity - craftAmount (the next craft must still fit, otherwise
+// the crafter stalls). Drills produce one unit at a time so they use
+// itemCapacity directly.
 exports.getPickupThreshold = function(block, item) {
     if (!block) return 1;
     const baseCap = block.itemCapacity || 1;

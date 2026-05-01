@@ -10,17 +10,12 @@ const turretFetchPending = require("extended-ui/utils/turret-fetch-pending");
 
 const FETCH_PENDING_TTL_SECONDS = 2.0;
 
-// Debug logging shares the auto-pilot toggle (see utils/logger.js) so
-// one switch covers the whole pipeline.
 function dbg() { return logger.enabled(); }
 function dlog(s) { logger.log(s); }
 function bTag(b) { return logger.tag(b); }
 
-// True when the autopilot is steering the drone to a non-core destination.
-// We use this to suppress the core-dump fallback in this module: otherwise
-// the drone deposits its stack the moment its path crosses core range,
-// even though the autopilot intends it for a producer-topup / consumer
-// delivery / storage fill elsewhere.
+// Suppresses the core-dump fallback while the autopilot is heading
+// somewhere other than the core.
 function autopilotHeadingNonCore() {
     if (!Core.settings.getBool("eui-auto-pilot", false)) return false;
     const target = autoPilot.getTarget();
@@ -39,9 +34,8 @@ Events.run(Trigger.update, () => {
 
     let request = null;
     let requestPriority = -1;
-    // For FETCH (request is an Item) we need the originating turret so
-    // the pending-cache below knows who we asked for. Delivery sets
-    // request to the Building directly, no separate tracking needed.
+    // FETCH path: request is an Item, requestBuilding is its turret.
+    // Delivery path: request is the Building itself.
     let requestBuilding = null;
     let config = Core.settings.getJson("eui.autofill.priority", ObjectMap, () => new ObjectMap());
 
@@ -53,17 +47,12 @@ Events.run(Trigger.update, () => {
         const block = b.tile.block();
         if (block instanceof ItemTurret && !turretsOn) return;
         if (!consumerConfig.isEnabled(block)) return;
-        // Turrets accept ammo via ammoTypes (not the consumers[] array),
-        // so the ConsumeItems-style filter would skip them — keep them
-        // in the loop so getBestAmmo / acceptStack can do their thing.
+        // Turrets accept ammo via ammoTypes, not consumers[].
         const isItemTurret = block instanceof ItemTurret;
         if (!isItemTurret && !block.consumers.find(c => c instanceof ConsumeItems || c instanceof ConsumeItemFilter || c instanceof ConsumeItemDynamic)) return;
 
-        // Skip if we just queued a Call.requestItem for this building and
-        // the drone isn't carrying that item yet. Lets the in-flight
-        // request actually complete instead of being re-issued every tick.
-        // If the drone already carries the pending item, fall through —
-        // we WANT the delivery branch to fire below.
+        // If a request is in-flight for this building, skip unless we're
+        // already carrying the item it asked for.
         const pendingEntry = turretFetchPending.get(b);
         if (pendingEntry && !(stack.amount > 0 && stack.item === pendingEntry.item)) {
             if (dbg()) dlog("range-iter " + bTag(b) + " skip: pending fetch of " + pendingEntry.item.name);
@@ -78,26 +67,11 @@ Events.run(Trigger.update, () => {
         if (blockPriority < requestPriority) return;
         if (blockPriority == requestPriority && request instanceof Building) return;
 
-        // Same gate as the autopilot's findBestConsumer / isStale: the
-        // consumer must be below the user's fill target for the item the
-        // drone is carrying, AND must physically accept at least one
-        // unit. Without the stock<target check the drone would deliver
-        // tiny amounts to nearly-full consumers in range, or — worse —
-        // refuse to deliver to a partially-filled consumer because room
-        // < blockMin (the bug visible in last_log.txt: pyratite-mixer
-        // with sand=6/10 got skipped because 4 < 10, even though the
-        // user set fillPct=100 % meaning "top up to full").
         const wantsItem = stack.amount > 0 && stack.item != null;
         if (wantsItem) {
-            // Per-ammo whitelist: a turret with this specific ammo
-            // unchecked must NEVER be a delivery target. Without this
-            // gate the drone happily dumps pyratite into a spectre that
-            // had pyratite explicitly disabled, because acceptStack still
-            // returns >0 (slot is empty) and stock<target still holds.
+            // Turret with this specific ammo disabled — fall through to
+            // the fetch path; it may still want a different ammo type.
             if (isItemTurret && !turretAmmoConfig.isEnabled(block, stack.item)) {
-                // fall through — block can't be the delivery target,
-                // but we still let the fetch path below decide whether
-                // to request a different ammo for this turret.
             } else {
                 const target = consumerConfig.getTargetFill(b, stack.item);
                 const stock = consumerConfig.getItemStock(b, stack.item);
@@ -116,11 +90,6 @@ Events.run(Trigger.update, () => {
         let newRequest = null;
         if (!isCoreAvailible) return;
         if (block instanceof ItemTurret) {
-            // Drop the strict "ammo empty" gate: getBestAmmo's
-            // acceptStack check already filters out turrets that
-            // can't take more of any ammo type, and waiting until a
-            // turret runs fully dry causes a firing pause that the
-            // user explicitly didn't want. Refill on any room.
             newRequest = getBestAmmo(b, core);
         } else if (block instanceof UnitFactory) {
             newRequest = getUnitFactoryRequest(b, block, core);
@@ -138,8 +107,6 @@ Events.run(Trigger.update, () => {
     if (request instanceof Building) {
         if (dbg()) dlog("transfer " + (stack.item ? stack.item.name : "?") + "x" + stack.amount + " -> " + bTag(request));
         Call.transferInventory(player, request);
-        // Delivery succeeded for this turret as far as we asked — clear
-        // the pending entry so a follow-up request can fire next tick.
         turretFetchPending.clear(request);
         timer.increase();
         return;
@@ -148,9 +115,7 @@ Events.run(Trigger.update, () => {
     if (!isCoreAvailible || !player.within(core, Vars.buildingRange)) return;
 
     if (stack.amount) {
-        // Storage-reservation guard uses a fixed 5-unit floor (matches the
-        // hardcoded floor in storage-fill.js): if the stack is at least
-        // that big and a storage is reserving the item, hold it.
+        // 5-unit floor matches the reservation floor in storage-fill.js.
         if (stack.amount >= 5 && storageFill.isItemReservedForStorage(stack.item, team)) {
             if (dbg()) dlog("dump-suppressed: storage reserves " + stack.item.name + " stack=" + stack.amount);
             return;
@@ -176,10 +141,6 @@ Events.run(Trigger.update, () => {
         const amount = computeFetchAmount(request, team, player);
         if (dbg()) dlog("FETCH " + request.name + " x" + amount + " from core");
         Call.requestItem(player, core, request, amount);
-        // Mark the originating turret as pending so the next ticks skip
-        // it until the requestItem completes (or TTL expires). Without
-        // this, eui-action-delay=0 spams requestItem every render tick
-        // and the drone never catches up.
         if (requestBuilding) {
             turretFetchPending.markRequested(requestBuilding, request, FETCH_PENDING_TTL_SECONDS);
         }
@@ -187,30 +148,10 @@ Events.run(Trigger.update, () => {
     }
 });
 
-// Slider=0 % is "smart batch" mode: drone fetches exactly enough to
-// top each stuck consumer up to its smart-batch target (largest clean
-// multiple of recipe within cap). "Stuck" means stock < recipe — the
-// consumer can't start another cycle on its own. A consumer at or
-// above recipe is left alone (it can run, possibly fed externally).
-//   drone cap 30, two empty crucibles (need 28 each): fetch=28
-//     (first crucible fits, second trip handles the other)
-//   drone cap 30, three empty smelters (need 10 each): fetch=30
-//   drone cap 70, two empty crucibles + one empty smelter: fetch=66
-//   reconstructor with stock=20 / recipe=40 / smartBatch=80: need=60
-//   any consumer with stock >= recipe: skipped; if no consumer
-//     contributes we fall back to 999 (legacy behavior, lets the
-//     game-side cap handle it).
-// Other slider values keep the legacy "request 999, game caps"
-// behavior unchanged.
+// Slider=0 % activates smart-batch fetch: sum need across stuck
+// consumers/turrets up to drone cap, otherwise fall back to 999.
 function computeFetchAmount(item, team, player) {
     const debugging = dbg();
-    // Smart-fetch activates when either slider is at 0 % — that's the
-    // user's "fetch only what's actually needed" mode. With both at
-    // non-zero we fall back to 999 (legacy: drone takes a full load,
-    // delivers to whoever, dumps surplus). One slider at 0 % is enough
-    // to flip smart mode on for the whole fetch since an empty turret
-    // and an empty crafter wanting the same item should both be
-    // counted toward the same trip's sum.
     if (consumerConfig.getFillPct() !== 0 && consumerConfig.getTurretFillPct() !== 0) {
         if (debugging) dlog("computeFetchAmount(" + item.name + "): both sliders !=0 -> 999");
         return 999;
@@ -238,30 +179,14 @@ function computeFetchAmount(item, team, player) {
                     c instanceof ConsumeItems
                     || c instanceof ConsumeItemFilter
                     || c instanceof ConsumeItemDynamic)) return;
-                // Trigger when the consumer can't run another cycle
-                // (stock < recipe via getTargetFill at slider=0 %).
                 const target = consumerConfig.getTargetFill(b, item);
                 if (target <= 0) return;
                 const stock = consumerConfig.getItemStock(b, item);
                 if (stock >= target) { counts.stocked++; return; }
-                // Top up to the smart-batch target so the buffer
-                // drains cleanly. need = clean batch size minus what
-                // the consumer already holds.
                 need = consumerConfig.getSmartBatchAmount(b, item) - stock;
             } else {
-                // Turrets: refill only ammo types not currently loaded
-                // (no race against external feeds). need = acceptStack
-                // room so the drone fetches exactly what fits.
                 if (!b.ammo) return;
-                // Per-ammo whitelist: respect the turret-ammo config so
-                // a disabled (unchecked) ammo type isn't summed into the
-                // fetch — otherwise drone fetches an item it'll refuse
-                // to deliver to this turret (and may dump back to core).
                 if (!turretAmmoConfig.isEnabled(block, item)) { counts.ammoOff++; return; }
-                // Slider gate via real ammo stock — items[] is always 0
-                // for turrets, so without getItemStock the slider is
-                // effectively ignored and drone refills 1 unit per
-                // visit regardless of %.
                 const tTarget = consumerConfig.getTargetFill(b, item);
                 if (tTarget <= 0) return;
                 const tStock = consumerConfig.getItemStock(b, item);
@@ -279,10 +204,8 @@ function computeFetchAmount(item, team, player) {
         } catch (e) {}
     };
 
-    // Autopilot will steer the drone anywhere on the team's map after
-    // the fetch, so summing across the whole team gives the drone the
-    // chance to fill multiple consumers with one trip. Without
-    // autopilot we limit to in-range so non-pilot mode stays local.
+    // With autopilot, sum across the whole team — the drone can reach
+    // anywhere. Without it, stay in range.
     if (Core.settings.getBool("eui-auto-pilot", false)) {
         const builds = teamBuildingsCache.get(team);
         if (builds) builds.each(visit);
@@ -307,28 +230,13 @@ function getBestAmmo(turretBuild, core) {
     turret.ammoTypes.each((item, ammo) => {
         if (!turretAmmoConfig.isEnabled(turret, item)) return;
         if (core.items.get(item) < coreLimits.getLimit(item)) return;
-        // Skip ammo the turret can't actually receive — without this,
-        // multi-ammo turrets (e.g. double turret) tell us "I want
-        // graphite" even when their graphite slot is full, the drone
-        // fetches from core, can't deliver, dumps back, and loops.
-        // acceptStack lives on the Building, not the Block — the old
-        // signature took the Block here and crashed with "Cannot find
-        // function acceptStack in object duo" the moment a turret
-        // with empty ammo entered the auto-fill loop.
+        // acceptStack lives on Building, not Block.
         if (turretBuild.acceptStack(item, 1, probeUnit) <= 0) return;
-        // Slider gate: skip when the turret already holds at least
-        // 'target' worth of this ammo. At slider=0 % target=1 so any
-        // loaded ammo skips (drone helps only when truly empty); at
-        // higher % the threshold scales with cap. Reading getItemStock
-        // (b.ammo aware) — not items[] (always 0 for turrets) — is
-        // what makes the slider actually do anything.
         const ggTarget = consumerConfig.getTargetFill(turretBuild, item);
         const ggStock = consumerConfig.getItemStock(turretBuild, item);
         if (ggStock >= ggTarget) return;
         const damage = ammo.damage + ammo.splashDamage;
         const priority = turretAmmoConfig.getPriority(turret, item);
-        // Priority dominates when set; damage breaks ties (and is the
-        // sole signal when nobody set priorities).
         const score = priority * 100000 + damage;
         if (score > bestScore) {
             best = item;
@@ -338,11 +246,6 @@ function getBestAmmo(turretBuild, core) {
     return best;
 }
 
-// Same gate as findBestConsumer: the consumer's stock for this item
-// must be below its fill target AND the consumer must accept at
-// least one unit right now. Anything stricter (room ≥ minAmount)
-// would refuse partially-filled consumers and shuttle items back to
-// the core instead of topping them up.
 function consumerWantsItem(build, item) {
     try {
         const target = consumerConfig.getTargetFill(build, item);

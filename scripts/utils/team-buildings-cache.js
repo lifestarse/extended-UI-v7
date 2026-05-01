@@ -1,10 +1,6 @@
 // Per-team snapshot of team.data().buildings, invalidated on
-// build/destroy/world-load. Auto-pilot calls builds.each multiple times
-// per scan; without this cache each scan walks the underlying Seq
-// repeatedly and drives idle-tick CPU through the floor on big bases.
-//
-// API mirrors the Seq.each(callback) shape so call sites stay
-// unchanged. Returns null when the team has no buildings yet.
+// build/destroy/world-load. API mirrors Seq.each(fn) so call sites
+// stay unchanged.
 
 const versions = {};
 const cache = {};
@@ -25,19 +21,15 @@ function bumpFromTile(tile) {
     try { bumpForTeam(tile.team()); } catch (e) {}
 }
 
-// EventType.* is the safe path here — bare BlockBuildEndEvent isn't
-// exposed as a global in every Mindustry build. Each handler is also
-// wrapped so a missing event class on an older version can't take the
-// whole module down (and through the require cycle, drag auto-pilot
-// down with it — that's how this file crashed storage-drain.js#65
-// with "Cannot find function getTarget" on first load).
+// Bare BlockBuildEndEvent isn't a global in every Mindustry build —
+// go through EventType. Wrapped so a missing class on a different
+// version can't take the module down.
 function safeOn(evt, fn) {
     try { if (evt) Events.on(evt, fn); } catch (e) { try { log("eui team-buildings-cache: " + e); } catch (ee) {} }
 }
 function clearObj(o) {
-    // for (const k in o) is parse-error in this Mindustry's Rhino when
-    // two such loops sit in the same scope ("redeclaration of const k").
-    // Object.keys + forEach sidesteps that and stays ES5-friendly.
+    // Two `for (const k in obj)` in one scope is a Rhino parse error
+    // here, hence Object.keys.
     Object.keys(o).forEach(k => delete o[k]);
 }
 safeOn(EventType.BlockBuildEndEvent, e => { if (e) bumpFromTile(e.tile); });

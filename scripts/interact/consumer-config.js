@@ -114,12 +114,8 @@ exports.getCapacityFor = function(block, item) {
                     if (cap > 0) return cap;
                 }
             } catch (e) {}
-            // Fallback: turret accepts the item (ammoTypes.get returned
-            // non-null) but the ammo-math gave 0 (Rhino read maxAmmo or
-            // ammoMultiplier as 0, modded turret with unusual values,
-            // etc.). Use itemCapacity so downstream gates still consider
-            // the turret — without this, target collapses to 0 and the
-            // pyratite-loop the user reported triggers.
+            // Fallback when ammo-math returns 0 (modded turret / Rhino
+            // reading maxAmmo or ammoMultiplier as 0).
             return block.itemCapacity || 0;
         }
     } catch (e) {}

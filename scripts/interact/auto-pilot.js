@@ -16,19 +16,10 @@ const ARRIVE_PADDING = Vars.tilesize * 2;
 let cached = null;
 let scanTick = RESCAN_TICKS;
 
-// Debug logging via the shared eui-debug-autopilot toggle (see
-// utils/logger.js). When the user can't tell why the drone ignores a
-// particular consumer, switching this on for a few seconds and
-// grepping last_log.txt for the block name shows exactly which filter
-// rejected it.
 function dbg() { return logger.enabled(); }
 function dlog(s) { logger.log(s); }
 function blockTag(b) { return logger.tag(b); }
 
-// Other modules (auto-fill, auto-collect) consult this so they don't dump
-// the drone's stack into the core just because the autopilot's path took
-// it through core range -- only "core-dump" / "core-fetch" trips should
-// trigger the core transfer there.
 exports.getTarget = function() { return cached; };
 
 Events.run(Trigger.update, () => {
@@ -49,9 +40,8 @@ Events.run(Trigger.update, () => {
         return;
     }
 
-    // Throttle scans: a null result is also cached for RESCAN_TICKS so
-    // the per-tick spam during idle (no work to do) doesn't grind through
-    // every turret in builds.each on every render frame.
+    // Null result is also cached for RESCAN_TICKS — without this the
+    // !cached branch ran builds.each on every render frame.
     scanTick++;
     if (scanTick >= RESCAN_TICKS || (cached && isStale(cached, unit))) {
         scanTick = 0;
@@ -75,40 +65,25 @@ function isStale(target, unit) {
     if (!target.b || target.b.dead || target.b.tile == null || target.b.tile.build !== target.b) return true;
     const stack = unit.stack;
     // Core trips self-stale on completion so pickTarget can flip the
-    // drone to consumer-deliver / producer-collect immediately. Without
-    // this the drone parks at the core after a fetch and auto-fill's
-    // own at-core deposit branch dumps the stack right back in (this
-    // was the turret-graphite loop: fetch -> dump -> fetch -> ...).
+    // drone to the next task in the same scan.
     if (target.kind === "core-fetch") return stack.amount > 0;
     if (target.kind === "core-dump") return stack.amount === 0;
     if (target.kind === "producer-topup") {
         if (stack.amount === 0 || stack.item !== target.item) return true;
         const cap = unit.type ? unit.type.itemCapacity : 0;
         if (cap > 0 && stack.amount >= cap) return true;
-        // Drill vein depleted / tile swap — abandon.
         if (target.b.block instanceof Drill && target.b.dominantItem !== target.item) return true;
         if (!target.b.items) return true;
-        // Same pickup-threshold gate as findBestProducer / findTopUpTarget:
-        // once stock drops below it the drone moves on to a fuller
-        // producer (or back to delivery) instead of trickle-pulling.
         const pickupThr = collectConfig.getPickupThreshold(target.b.block, target.item);
         return target.b.items.get(target.item) < pickupThr;
     }
     if (stack.amount > 0 && stack.item) {
         if (!target.expectsConsumer) return true;
         if (target.item !== stack.item) return true;
-        // If the user disabled this ammo on this turret while we were
-        // en route, drop the target — otherwise drone keeps flying to
-        // a turret it shouldn't be feeding.
         try {
             if (target.b.block instanceof ItemTurret
                 && !turretAmmoConfig.isEnabled(target.b.block, stack.item)) return true;
         } catch (e) {}
-        // Stale once the consumer is at or above the user's fill target,
-        // OR if it physically can't accept anything right now (full
-        // buffer for this item). Note: NOT gated on "drone could deliver
-        // a full batch" — a drone with 3 items left should still finish
-        // delivering to a consumer that needs more.
         const tgt = consumerConfig.getTargetFill(target.b, stack.item);
         const stk = consumerConfig.getItemStock(target.b, stack.item);
         if (stk >= tgt) return true;
@@ -131,8 +106,7 @@ function pickTarget(unit, team) {
         ? stack.item.name + "x" + stack.amount
         : "empty";
 
-    // Drain trips override everything else: once items are picked up from
-    // a drain storage, the drone heads straight to core to unload them.
+    // Drain pickup overrides every other task — go straight to core.
     if (stack.amount > 0 && stack.item && storageDrain.isCarrying() && coreOn) {
         const core = Vars.player.closestCore();
         if (core) {
@@ -218,10 +192,6 @@ function pickTarget(unit, team) {
     return winner;
 }
 
-// Cached snapshot — invalidated on build/destroy/world-load by
-// utils/team-buildings-cache. pickTarget calls into builds.each up to
-// four times per scan (storage / drain / consumer / producer), so a
-// single shared snapshot avoids re-walking the underlying Seq.
 function teamBuildings(team) {
     return teamBuildingsCache.get(team);
 }
@@ -244,8 +214,7 @@ function findBestStorageNeed(unit, item, team) {
             const deficit = threshold - stock;
             if (cap > 0 && deficit < cap) return;
             if (b.acceptStack(item, 5, unit) < 5) return;
-            // Priority dominates; deficit breaks ties so the same-priority
-            // storage with the larger gap gets visited first.
+            // Priority dominates, deficit breaks ties.
             const prio = storageConfig.getPriority(b);
             if (prio > bestPriority || (prio === bestPriority && deficit > bestDeficit)) {
                 bestPriority = prio;
@@ -264,9 +233,6 @@ function findCoreFetchForStorage(unit, team) {
     const builds = teamBuildings(team);
     if (!builds) return null;
     const cap = (unit.type && unit.type.itemCapacity) || 0;
-    // Highest-priority storage with a needed item the core can supply
-    // wins. Without the priority sort, the iteration order of the team
-    // building list decides which storage gets fed first.
     let chosenItem = null;
     let chosenPriority = -1;
     builds.each(b => {
@@ -286,10 +252,6 @@ function findCoreFetchForStorage(unit, team) {
     return { x: core.x, y: core.y, b: core, item: chosenItem, expectsConsumer: false, kind: "core-fetch" };
 }
 
-// Pick an item the drone should fetch from the core to feed a consumer
-// (factory or item-turret). Without this trip the autopilot has no path
-// from "drone empty" to "drone carries an input the core supplies",
-// which is why core->factory and core->turret refused to work.
 function findCoreFetchForConsumer(unit, team) {
     const core = Vars.player.closestCore();
     if (!core || !core.items) return null;
@@ -300,26 +262,13 @@ function findCoreFetchForConsumer(unit, team) {
 
     let chosenItem = null;
 
-    // Pass 1: turrets get their own gating — any room (acceptStack>0)
-    // counts, not just fully-empty ammo. This is the "separate logic"
-    // turrets need: with the recipe-aware trigger non-turrets fire on
-    // (stock<recipe), partial-stock reconstructors and crafters would
-    // otherwise hog every fetch trip and turrets would just drain to
-    // empty waiting their turn. Iterating turrets first guarantees
-    // they get serviced before the iteration reaches a consumer that's
-    // also asking.
+    // Pass 1: turrets first, gated on acceptStack>0 (any room) rather
+    // than the recipe-aware stock<recipe used for non-turrets below.
     const debugging = dbg();
     let chosenBuild = null;
-    // Per-pass counters so the debug log gets one summary line per pass
-    // instead of N lines per turret per ammo. The previous per-skip
-    // dlog spam grew last_log.txt to 40 MB in one session.
     const pass1 = { turrets: 0, disabled: 0, coreLow: 0, noRoom: 0, stocked: 0 };
     let pass1Reason = null;
 
-    // Score by ammo priority (dominant) * 100000 + bullet damage —
-    // same shape as auto-fill.getBestAmmo. Lifted to module scope so
-    // both the per-turret ammo pick and the cross-turret tiebreak
-    // share one formula.
     function ammoScore(block, item, ammo) {
         const damage = ammo.damage + ammo.splashDamage;
         const priority = turretAmmoConfig.getPriority(block, item);
@@ -327,11 +276,6 @@ function findCoreFetchForConsumer(unit, team) {
     }
 
     if (turretsOn) {
-        // Cross-turret scoring: pick the highest-scoring ammo trip
-        // across ALL turrets, not the first turret iteration order
-        // hits. Without this, with two empty turrets — say a duo
-        // (copper) and a salvo (graphite) — pass-1 fed whichever the
-        // Seq enumerated first regardless of priority.
         let bestScore = -Infinity;
         builds.each(b => {
             try {
@@ -347,14 +291,8 @@ function findCoreFetchForConsumer(unit, team) {
                     if (!turretAmmoConfig.isEnabled(block, item)) { pass1.disabled++; return; }
                     if (core.items.get(item) < coreLimits.getLimit(item)) { pass1.coreLow++; return; }
                     if (b.acceptStack(item, 1, probeUnit) <= 0) { pass1.noRoom++; return; }
-                    // Slider gate: skip if turret already has at least
-                    // 'target' worth of this ammo loaded. Reading the
-                    // actual ammo queue (getItemStock) — not items[],
-                    // which is always 0 for turrets — is what makes
-                    // the slider mean what it says. At slider=0 %
-                    // target=1 so any loaded ammo skips (drone helps
-                    // only at empty); at slider=100 % target=cap so
-                    // drone refills constantly.
+                    // getItemStock reads b.ammo for turrets — items[] is
+                    // always 0 there.
                     const target = consumerConfig.getTargetFill(b, item);
                     const stock = consumerConfig.getItemStock(b, item);
                     if (stock >= target) { pass1.stocked++; return; }
@@ -400,11 +338,6 @@ function findCoreFetchForConsumer(unit, team) {
             if (!ci) return;
             pass2.consumers++;
 
-            // Same gate as findBestConsumer / auto-fill: only fetch when
-            // this consumer's stock is below the user's fill target AND
-            // it physically accepts the item right now. Otherwise the
-            // drone fetches an item it can't deliver (consumer's slot is
-            // already at target) and shuttles it back to the core.
             const stockOf = (item) => consumerConfig.getItemStock(b, item);
             const wants = (item) => {
                 const target = consumerConfig.getTargetFill(b, item);
@@ -430,7 +363,7 @@ function findCoreFetchForConsumer(unit, team) {
                     chosenItem = item;
                 });
             } else {
-                // ConsumeItemDynamic — UnitFactory currentPlan path.
+                // ConsumeItemDynamic — UnitFactory currentPlan.
                 if (block instanceof UnitFactory && b.currentPlan != -1) {
                     const reqs = block.plans.get(b.currentPlan).requirements;
                     for (let i = 0; i < reqs.length; i++) {
@@ -472,23 +405,9 @@ function findBestConsumer(unit, item, team) {
                 if (!wantsItem) return;
             }
             if (!consumerConfig.isEnabled(block)) return;
-            // Per-ammo whitelist: a turret with this specific ammo type
-            // unchecked must NEVER be chosen as a delivery target, even
-            // if the block-level isEnabled is on. Without this gate the
-            // drone happily dumps pyratite into a spectre that the user
-            // explicitly excluded from pyratite ammo, because the turret
-            // still has acceptStack>0 (fresh empty slot) and beats any
-            // crafter on bestStock.
+            // Per-ammo whitelist overrides the block-level isEnabled.
             if (isItemTurret && !turretAmmoConfig.isEnabled(block, item)) { counts.ammoOff++; return; }
 
-            // The fill-pct slider is the user's "top up consumers to X%
-            // of capacity" knob, so the right gate is "is this consumer
-            // BELOW that target?" — not "could the drone deliver a
-            // full batch?". With the old room-based filter and pct=100
-            // any partially-filled consumer was rejected (room < cap)
-            // even though the drone could top up the remaining slot,
-            // and the autopilot kept fetching from core only to dump
-            // back ("shuttle" loop).
             const target = consumerConfig.getTargetFill(b, item);
             const stock = consumerConfig.getItemStock(b, item);
             if (stock >= target) { counts.stocked++; return; }
@@ -517,12 +436,6 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
     let bestB = null;
     let bestItem = null;
     let bestScore = -1;
-    // requireItem set === top-up mode (drone is already carrying the item).
-    // The pickup-threshold guards the "should the drone visit this producer
-    // from idle?" decision. For a top-up the drone is committed to the item
-    // anyway, so any positive stock is fair game — otherwise a drone that
-    // partial-delivered to a factory parks at the consumer with 3 of an
-    // item because every drill is just under the user's collect threshold.
     const topUp = requireItem != null;
 
     builds.each(b => {
@@ -530,13 +443,8 @@ function findBestProducer(unit, team, factoryOn, drillOn, requireItem) {
             const block = b.block;
             if (!block) return;
 
-            // Both top-up and from-empty collection respect the user's
-            // pickup-threshold slider. For a top-up trip we'd otherwise
-            // strand the drone trickle-pulling 1 unit at a time from a
-            // slow drill while a fully-stocked drill nearby is ignored.
-            // Threshold is per-item: GenericCrafter outputs cap below
-            // itemCapacity (cap - craftAmount), so it must be computed
-            // against the specific output, not the block as a whole.
+            // pickup-threshold is per-item: GenericCrafter caps each
+            // output below itemCapacity (cap - craftAmount).
             if (factoryOn && block instanceof GenericCrafter
                 && block.outputItems != null
                 && collectConfig.isFactoryEnabled(block)) {

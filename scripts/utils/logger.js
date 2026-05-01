@@ -1,6 +1,5 @@
-// Shared debug logger for the auto-pilot pipeline. Modules call make()
-// with their own prefix; all loggers read the same eui-debug-autopilot
-// toggle so one switch covers the whole chain.
+// Shared debug logger. One toggle (eui-debug-autopilot by default)
+// gates every prefixed logger.
 function make(prefix, settingKey) {
     const key = settingKey || "eui-debug-autopilot";
     function enabled() {

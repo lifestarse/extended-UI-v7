@@ -14,8 +14,6 @@ function build() {
         rebuild();
     });
 
-    // In-dialog clipboard for the copy/paste UX. Cleared on reset and on
-    // dialog close so a stale snapshot doesn't outlive a session.
     let clipboard = null;
 
     let listTable = null;
@@ -44,7 +42,6 @@ function build() {
             return;
         }
 
-        // Sort by descending priority first, then tile coords for stability.
         storages.sort((a, b) => {
             const pa = storageConfig.getPriority(a);
             const pb = storageConfig.getPriority(b);
@@ -67,8 +64,6 @@ function build() {
                 ? Core.bundle.format("eui.storage.row-summary", configured)
                 : Core.bundle.get("eui.storage.row-empty")).pad(4);
 
-            // Priority field (default 0). Higher first when the autopilot
-            // picks a storage to fill / drain.
             const priorityField = row.field(storageConfig.getPriority(building) + "", text => {
                 const v = parseInt(text);
                 if (!isNaN(v)) {

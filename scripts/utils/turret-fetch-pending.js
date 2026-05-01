@@ -1,21 +1,7 @@
-// Tracks turrets/consumers that auto-fill has just queued a
-// Call.requestItem for. While a turret is "pending", eachBlock skips
-// it for fresh fetches unless the drone is already carrying its item.
-//
-// Why: with eui-action-delay=0 ms, auto-fill's main loop runs every
-// render tick. Call.requestItem is asynchronous — the 30 surge-alloy
-// don't appear in the drone's stack on the very next tick. Without
-// this cache, the drone re-issues the same request frame after frame,
-// the turret meanwhile fires and acceptStack drops to 0, by the time
-// the 30 do arrive the drone can't deliver, dumps back to core, and
-// fetches again — the shuttle loop visible in last_log.txt as endless
-// "FETCH surge-alloy x30 from core" with no "transfer" between them.
-//
-// Cleared on:
-//   - successful Call.transferInventory  (auto-fill clears explicitly)
-//   - BlockDestroyEvent                   (tile gone)
-//   - WorldLoadEvent                      (new save / map)
-//   - TTL expiry                          (fallback retry)
+// Per-turret pending-fetch cache. Call.requestItem is asynchronous, so
+// without throttling auto-fill re-issues the same request every tick
+// when eui-action-delay=0 and the drone never catches up. Cleared on
+// successful delivery, BlockDestroyEvent, WorldLoadEvent, or TTL.
 
 const pending = new ObjectMap();
 

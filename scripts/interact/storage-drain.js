@@ -55,11 +55,9 @@ exports.findDrainSource = function(team) {
 // initialising.
 const autoPilot = require("extended-ui/interact/auto-pilot");
 
-// True when the autopilot is steering the drone toward something other
-// than this drain trip. Used to suppress opportunistic drain pickups
-// while the autopilot is busy with a higher-priority task — without this
-// gate the drain runs the moment the drone strays into range of a drain
-// storage, even when its task priority is the lowest.
+// True when the autopilot is heading somewhere other than a drain trip.
+// Suppresses opportunistic drain pickups while a higher-priority task
+// is in progress.
 function autopilotElsewhere() {
     if (!Core.settings.getBool("eui-auto-pilot", false)) return false;
     const target = autoPilot.getTarget();
